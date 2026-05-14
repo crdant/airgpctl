@@ -1,9 +1,21 @@
 # airgapctl Implementation Progress
 
 ## Active Plan
-[docs/plans/2026-05-14-001-feat-cobra-cli-subcommands-plan.md](docs/plans/2026-05-14-001-feat-cobra-cli-subcommands-plan.md)
+[docs/plans/2026-05-14-002-fix-review-findings-plan.md](docs/plans/2026-05-14-002-fix-review-findings-plan.md)
 
-## Implementation Units
+## Implementation Units (Review Findings Fixes)
+
+- [x] **U1. Wire bearer-token auth and surface docker-config errors**
+- [ ] **U2. Harden chart image reference extraction**
+- [ ] **U3. Deduplicate image-path helpers into pkg/distribution**
+- [ ] **U4. Graceful tar/gzip detection in bundle extraction**
+- [ ] **U5. Safer chart directory selection after extraction**
+- [ ] **U6. Improve registry HTTP error classification**
+- [ ] **U7. Add unit-test coverage for new public functions**
+- [ ] **U8. Fix error message capitalization**
+
+## Previous Plan (Completed)
+[docs/plans/2026-05-14-001-feat-cobra-cli-subcommands-plan.md](docs/plans/2026-05-14-001-feat-cobra-cli-subcommands-plan.md)
 
 - [x] **U1. Cobra CLI scaffolding and command structure**
 - [x] **U2. Bundle extraction and airgap.yaml parsing**
@@ -91,3 +103,22 @@
 **Build:** `go build ./cmd/airgapctl` produces working binary.
 
 **Learning documented:** `docs/solutions/best-practices/integration-testing-cli-mock-bundles-registries.md`
+
+---
+
+## Review Findings Fixes (New Plan)
+
+### U1 — Wire bearer-token auth and surface docker-config errors (2026-05-14)
+
+**Files created/modified:**
+- `pkg/registry/registry.go` — added `Token` to `Config`; `setAuth` sets `Authorization: Bearer <token>` when token is present
+- `cmd/airgapctl/push.go` — forwarded `pushOpts.token` into `registry.Config`; captured and returned `loadDockerConfig()` error in `PreRunE`
+- `pkg/registry/registry_test.go` — added `TestPusher_Push_TokenAuth`
+- `cmd/airgapctl/commands_test.go` — added `TestPushCommand_Token` and `TestPush_DockerConfigParseError`
+- `cmd/airgapctl/push_test.go` — added `TestImagePath`, `TestLoadDockerConfig_MissingFile`, `TestLoadDockerConfig_MalformedJSON`, `TestLoadDockerConfig_SchemeMatching`, `TestLoadDockerConfig_MalformedAuthField`
+
+**Tests:** `go test ./pkg/registry/...` and `go test ./cmd/airgapctl/...` pass.
+**Build:** `go build ./cmd/airgapctl` produces working binary.
+
+**Commits:** `c50aae3`, `09c2920`
+**Learning documented:** `docs/solutions/best-practices/registry-auth-docker-config-error-handling-2026-05-14.md`
