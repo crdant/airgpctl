@@ -305,6 +305,70 @@ func TestWalker_ResolveImages_MissingTag(t *testing.T) {
 	}
 }
 
+func TestWalker_ReadBlob(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	manifestDigest := "readblob123"
+	manifestJSON := makeSingleArchManifest(t, "application/vnd.docker.distribution.manifest.v2+json")
+	createMockDistributionLayout(t, tmpDir, "library/nginx", "latest", manifestDigest, manifestJSON)
+
+	w := NewWalker(tmpDir)
+	data, err := w.ReadBlob("sha256:" + manifestDigest)
+	if err != nil {
+		t.Fatalf("ReadBlob error: %v", err)
+	}
+
+	if string(data) != string(manifestJSON) {
+		t.Errorf("ReadBlob returned wrong content")
+	}
+}
+
+func TestManifestBlobs(t *testing.T) {
+	manifest := []byte(`{
+		"schemaVersion": 2,
+		"mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+		"config": {
+			"mediaType": "application/vnd.docker.container.image.v1+json",
+			"size": 7023,
+			"digest": "sha256:configdigest"
+		},
+		"layers": [
+			{
+				"mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+				"size": 32654,
+				"digest": "sha256:layer1digest"
+			},
+			{
+				"mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+				"size": 16724,
+				"digest": "sha256:layer2digest"
+			}
+		]
+	}`)
+
+	digests, err := ManifestBlobs(manifest)
+	if err != nil {
+		t.Fatalf("ManifestBlobs error: %v", err)
+	}
+
+	want := []string{"sha256:configdigest", "sha256:layer1digest", "sha256:layer2digest"}
+	if len(digests) != len(want) {
+		t.Fatalf("expected %d blobs, got %d", len(want), len(digests))
+	}
+	for i, d := range want {
+		if digests[i] != d {
+			t.Errorf("blob[%d] = %q, want %q", i, digests[i], d)
+		}
+	}
+}
+
+func TestManifestBlobs_InvalidJSON(t *testing.T) {
+	_, err := ManifestBlobs([]byte("not json"))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
 func TestWalker_ResolveImages_InvalidManifestBlob(t *testing.T) {
 	tmpDir := t.TempDir()
 

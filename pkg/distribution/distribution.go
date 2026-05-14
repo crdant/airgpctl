@@ -128,6 +128,38 @@ func (w *Walker) readBlob(digest string) ([]byte, error) {
 	return os.ReadFile(blobPath)
 }
 
+// ReadBlob reads a content-addressable blob from the blobs/ directory.
+func (w *Walker) ReadBlob(digest string) ([]byte, error) {
+	return w.readBlob(digest)
+}
+
+// ManifestBlobs returns all blob digests referenced by a single-arch manifest.
+// This includes the config blob and all layer blobs. It does NOT parse manifest lists.
+func ManifestBlobs(manifestData []byte) ([]string, error) {
+	var manifest struct {
+		Config struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+		Layers []struct {
+			Digest string `json:"digest"`
+		} `json:"layers"`
+	}
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		return nil, fmt.Errorf("parsing manifest for blob enumeration: %w", err)
+	}
+
+	var digests []string
+	if manifest.Config.Digest != "" {
+		digests = append(digests, manifest.Config.Digest)
+	}
+	for _, layer := range manifest.Layers {
+		if layer.Digest != "" {
+			digests = append(digests, layer.Digest)
+		}
+	}
+	return digests, nil
+}
+
 // isManifestList returns true if the mediaType indicates a manifest list or OCI index.
 func isManifestList(mediaType string) bool {
 	switch mediaType {

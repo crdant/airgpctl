@@ -8,7 +8,7 @@
 - [x] **U1. Cobra CLI scaffolding and command structure**
 - [x] **U2. Bundle extraction and airgap.yaml parsing**
 - [x] **U3. Docker v2 layout traversal and manifest resolution**
-- [ ] U4. Registry push engine with multi-arch and idempotency
+- [x] **U4. Registry push engine with multi-arch and idempotency**
 - [x] **U5. Chart-structure-preserving values file generation**
 - [ ] U6. Subcommand implementations (list, push, values)
 
@@ -54,6 +54,18 @@
 
 **Tests:** `go test ./pkg/distribution/...` passes.
 **Build:** `make build` succeeds.
+
+### U4 — Registry push engine with multi-arch and idempotency (2026-05-14)
+
+**Files created/modified:**
+- `pkg/registry/registry.go` — `Pusher` implements pure Go push via Docker Registry HTTP API V2
+- `pkg/registry/pusher.go` — `Push()` handles single-arch and multi-arch manifest lists with correct blob→manifest→list ordering; idempotent via HEAD checks; progress callback; `[]Report` per-image status
+- `pkg/registry/pusher_test.go` — table-driven tests with mock `httptest` registry covering single-arch, multi-arch, idempotency, progress, auth, and partial failure
+
+**Tests:** `go test ./pkg/registry/...` passes.
+**Build:** `make build` succeeds.
+
+**Learning documented:** `docs/solutions/design-patterns/pure-go-registry-push-docker-v2-on-disk-layout.md`
 
 ### U5 — Chart-structure-preserving values file generation (2026-05-14)
 
