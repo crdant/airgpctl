@@ -4,7 +4,7 @@ set -euo pipefail
 ITERATIONS="${1:-10}"
 
 for i in $(seq 1 "$ITERATIONS"); do
-  result=$(opencode -p "
+  result=$(opencode run "
 You are continuing a feature implementation.
 
 Inputs:
