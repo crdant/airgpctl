@@ -79,14 +79,14 @@ func newValuesCmd() *cobra.Command {
 				return fmt.Errorf("helm pull failed: %w\n%s", err, string(out))
 			}
 
-		// helm --untar extracts into a subdirectory named after the chart.
-		// Find the directory whose Chart.yaml metadata.name matches the chart
-		// reference name (last path component of the OCI URL).
-		expectedName := filepath.Base(valuesOpts.chart)
-		chartDir, err = findChartDir(tmpChartDir, expectedName)
-		if err != nil {
-			return fmt.Errorf("helm pull did not produce an extracted chart directory: %w", err)
-		}
+			// helm --untar extracts into a subdirectory named after the chart.
+			// Find the directory whose Chart.yaml metadata.name matches the chart
+			// reference name (last path component of the OCI URL).
+			expectedName := filepath.Base(valuesOpts.chart)
+			chartDir, err = findChartDir(tmpChartDir, expectedName)
+			if err != nil {
+				return fmt.Errorf("helm pull did not produce an extracted chart directory: %w", err)
+			}
 		} else if isChartTarball(chartDir) {
 			// Extract local chart tarball to a temp directory
 			tmpChartDir, err := os.MkdirTemp("", "airgapctl-chart-*")
@@ -99,13 +99,13 @@ func newValuesCmd() *cobra.Command {
 				return fmt.Errorf("extracting chart tarball: %w", err)
 			}
 
-		// Find the directory whose Chart.yaml metadata.name matches the chart
-		// name derived from the tarball filename.
-		expectedName := chartNameFromTarball(valuesOpts.chart)
-		chartDir, err = findChartDir(tmpChartDir, expectedName)
-		if err != nil {
-			return fmt.Errorf("chart tarball did not produce an extracted chart directory: %w", err)
-		}
+			// Find the directory whose Chart.yaml metadata.name matches the chart
+			// name derived from the tarball filename.
+			expectedName := chartNameFromTarball(valuesOpts.chart)
+			chartDir, err = findChartDir(tmpChartDir, expectedName)
+			if err != nil {
+				return fmt.Errorf("chart tarball did not produce an extracted chart directory: %w", err)
+			}
 		}
 
 		// Read chart values.yaml to detect image references for filtering
@@ -316,6 +316,9 @@ func findChartDir(root string, expectedName string) (string, error) {
 // chartNameFromTarball returns the chart name derived from a tarball filename
 // by stripping the .tgz or .tar.gz extension.
 func chartNameFromTarball(path string) string {
+	if path == "" {
+		return ""
+	}
 	base := filepath.Base(path)
 	lower := strings.ToLower(base)
 	if strings.HasSuffix(lower, ".tar.gz") {

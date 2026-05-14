@@ -253,3 +253,58 @@ func TestFindChartDir_SingleDir(t *testing.T) {
 		t.Errorf("findChartDir(%q, %q) = %q, want %q", tmpDir, "chart", got, want)
 	}
 }
+
+func TestFindChartDir_NoDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	_, err := findChartDir(tmpDir, "missing")
+	if err == nil {
+		t.Fatal("expected error when no chart directories exist, got nil")
+	}
+}
+
+func TestFindChartDir_MissingChartYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a subdirectory with no Chart.yaml
+	chartDir := filepath.Join(tmpDir, "chart")
+	if err := os.MkdirAll(chartDir, 0755); err != nil {
+		t.Fatalf("creating chart dir: %v", err)
+	}
+
+	got, err := findChartDir(tmpDir, "chart")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := chartDir
+	if got != want {
+		t.Errorf("findChartDir(%q, %q) = %q, want %q", tmpDir, "chart", got, want)
+	}
+}
+
+// --- chartNameFromTarball tests ---
+
+func TestChartNameFromTarball(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"chart.tgz", "chart"},
+		{"chart.tar.gz", "chart"},
+		{"chart.TGZ", "chart"},
+		{"chart.TAR.GZ", "chart"},
+		{"/path/to/chart.tgz", "chart"},
+		{"/path/to/my-chart-1.2.3.tar.gz", "my-chart-1.2.3"},
+		{"chart.yaml", "chart.yaml"},
+		{"chart", "chart"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := chartNameFromTarball(tt.path)
+			if got != tt.want {
+				t.Errorf("chartNameFromTarball(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
