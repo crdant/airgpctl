@@ -10,7 +10,7 @@
 - [x] **U3. Docker v2 layout traversal and manifest resolution**
 - [x] **U4. Registry push engine with multi-arch and idempotency**
 - [x] **U5. Chart-structure-preserving values file generation**
-- [ ] U6. Subcommand implementations (list, push, values)
+- [x] **U6. Subcommand implementations (list, push, values)**
 
 ## Notes
 
@@ -77,3 +77,17 @@
 **Build:** `make build` succeeds.
 
 **Learning documented:** `docs/solutions/design-patterns/template-based-helm-values-generation-airgap-images.md`
+
+### U6 — Subcommand implementations (list, push, values) (2026-05-14)
+
+**Files created/modified:**
+- `cmd/airgapctl/list.go` — `list` subcommand: extracts bundle, resolves manifests via `distribution.Walker`, prints tabular output with image type, digest, and platforms
+- `cmd/airgapctl/push.go` — `push` subcommand: extracts bundle, resolves images, pushes to registry via `registry.Pusher` with progress reporting and per-image success/skip/failure summary
+- `cmd/airgapctl/values.go` — `values` subcommand: extracts bundle, resolves images, generates values file via `values.Generator` with chart-aware filtering from chart `values.yaml`
+- `cmd/airgapctl/commands_test.go` — integration tests for all three subcommands using mock airgap bundles (tar with distribution layout) and `httptest` mock registry
+- `cmd/airgapctl/root_test.go` — updated credential tests to use valid mock bundles and mock registry servers
+
+**Tests:** `go test ./cmd/airgapctl/...` passes (18 tests).
+**Build:** `go build ./cmd/airgapctl` produces working binary.
+
+**Learning documented:** `docs/solutions/best-practices/integration-testing-cli-mock-bundles-registries.md`
