@@ -912,6 +912,256 @@ func TestPusher_Push_PartialFailure(t *testing.T) {
 	}
 }
 
+func TestPusher_Push_ManifestAuthFailure(t *testing.T) {
+	mr := &mockRegistry{
+		blobs:     make(map[string]bool),
+		manifests: make(map[string][]byte),
+		requests:  make([]string, 0),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v2/", func(w http.ResponseWriter, r *http.Request) {
+		mr.mu.Lock()
+		mr.requests = append(mr.requests, r.Method+" "+r.URL.Path)
+		mr.mu.Unlock()
+
+		if r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/blobs/uploads/") {
+			w.Header().Set("Location", r.URL.Path+"upload-id")
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/blobs/uploads/") {
+			io.Copy(io.Discard, r.Body)
+			r.Body.Close()
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/manifests/") {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	mr.server = httptest.NewServer(mux)
+	defer mr.server.Close()
+
+	tmpDir := t.TempDir()
+	manifestDigest := "manifestauth123"
+	manifestJSON := []byte(`{
+		"schemaVersion": 2,
+		"mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+		"config": {
+			"mediaType": "application/vnd.docker.container.image.v1+json",
+			"size": 7023,
+			"digest": "sha256:configdigest"
+		},
+		"layers": []
+	}`)
+	createMockBlob(t, tmpDir, manifestDigest, manifestJSON)
+	createMockBlob(t, tmpDir, "configdigest", []byte("config data"))
+
+	walker := distribution.NewWalker(tmpDir)
+	img := distribution.Image{
+		SourceRef:   "nginx:latest",
+		Repository:  "library/nginx",
+		Tag:         "latest",
+		Digest:      "sha256:" + manifestDigest,
+		IsMultiArch: false,
+	}
+
+	p := NewPusher(Config{
+		Registry: mr.server.URL,
+	})
+
+	reqs := []ImagePush{
+		{Source: img, DestRepo: "prod/nginx", Tag: "latest"},
+	}
+
+	reports := p.Push(context.Background(), reqs, walker, nil)
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+	if reports[0].Success {
+		t.Fatal("expected failure due to manifest auth error")
+	}
+	if reports[0].Error == nil {
+		t.Fatal("expected error in report")
+	}
+	if !strings.Contains(reports[0].Error.Error(), "authentication failed") {
+		t.Fatalf("expected error to contain 'authentication failed', got: %v", reports[0].Error)
+	}
+}
+
+func TestPusher_Push_ManifestRetriableFailure(t *testing.T) {
+	mr := &mockRegistry{
+		blobs:     make(map[string]bool),
+		manifests: make(map[string][]byte),
+		requests:  make([]string, 0),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v2/", func(w http.ResponseWriter, r *http.Request) {
+		mr.mu.Lock()
+		mr.requests = append(mr.requests, r.Method+" "+r.URL.Path)
+		mr.mu.Unlock()
+
+		if r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/blobs/uploads/") {
+			w.Header().Set("Location", r.URL.Path+"upload-id")
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/blobs/uploads/") {
+			io.Copy(io.Discard, r.Body)
+			r.Body.Close()
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/manifests/") {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	mr.server = httptest.NewServer(mux)
+	defer mr.server.Close()
+
+	tmpDir := t.TempDir()
+	manifestDigest := "manifestretry123"
+	manifestJSON := []byte(`{
+		"schemaVersion": 2,
+		"mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+		"config": {
+			"mediaType": "application/vnd.docker.container.image.v1+json",
+			"size": 7023,
+			"digest": "sha256:configdigest"
+		},
+		"layers": []
+	}`)
+	createMockBlob(t, tmpDir, manifestDigest, manifestJSON)
+	createMockBlob(t, tmpDir, "configdigest", []byte("config data"))
+
+	walker := distribution.NewWalker(tmpDir)
+	img := distribution.Image{
+		SourceRef:   "nginx:latest",
+		Repository:  "library/nginx",
+		Tag:         "latest",
+		Digest:      "sha256:" + manifestDigest,
+		IsMultiArch: false,
+	}
+
+	p := NewPusher(Config{
+		Registry: mr.server.URL,
+	})
+
+	reqs := []ImagePush{
+		{Source: img, DestRepo: "prod/nginx", Tag: "latest"},
+	}
+
+	reports := p.Push(context.Background(), reqs, walker, nil)
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+	if reports[0].Success {
+		t.Fatal("expected failure due to manifest retriable error")
+	}
+	if reports[0].Error == nil {
+		t.Fatal("expected error in report")
+	}
+	if !strings.Contains(reports[0].Error.Error(), "temporarily unavailable") {
+		t.Fatalf("expected error to contain 'temporarily unavailable', got: %v", reports[0].Error)
+	}
+}
+
+func TestPusher_Push_BlobUploadAuthFailure(t *testing.T) {
+	mr := &mockRegistry{
+		blobs:     make(map[string]bool),
+		manifests: make(map[string][]byte),
+		requests:  make([]string, 0),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v2/", func(w http.ResponseWriter, r *http.Request) {
+		mr.mu.Lock()
+		mr.requests = append(mr.requests, r.Method+" "+r.URL.Path)
+		mr.mu.Unlock()
+
+		if r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/blobs/uploads/") {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	mr.server = httptest.NewServer(mux)
+	defer mr.server.Close()
+
+	tmpDir := t.TempDir()
+	manifestDigest := "blobauth123"
+	manifestJSON := []byte(`{
+		"schemaVersion": 2,
+		"mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+		"config": {
+			"mediaType": "application/vnd.docker.container.image.v1+json",
+			"size": 7023,
+			"digest": "sha256:configdigest"
+		},
+		"layers": []
+	}`)
+	createMockBlob(t, tmpDir, manifestDigest, manifestJSON)
+	createMockBlob(t, tmpDir, "configdigest", []byte("config data"))
+
+	walker := distribution.NewWalker(tmpDir)
+	img := distribution.Image{
+		SourceRef:   "nginx:latest",
+		Repository:  "library/nginx",
+		Tag:         "latest",
+		Digest:      "sha256:" + manifestDigest,
+		IsMultiArch: false,
+	}
+
+	p := NewPusher(Config{
+		Registry: mr.server.URL,
+	})
+
+	reqs := []ImagePush{
+		{Source: img, DestRepo: "prod/nginx", Tag: "latest"},
+	}
+
+	reports := p.Push(context.Background(), reqs, walker, nil)
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+	if reports[0].Success {
+		t.Fatal("expected failure due to blob upload auth error")
+	}
+	if reports[0].Error == nil {
+		t.Fatal("expected error in report")
+	}
+	if !strings.Contains(reports[0].Error.Error(), "authentication failed") {
+		t.Fatalf("expected error to contain 'authentication failed', got: %v", reports[0].Error)
+	}
+}
+
 // createMockBlob creates a blob in the tmpDir's blobs/sha256/<prefix>/<digest>/data path.
 func createMockBlob(t *testing.T, dir, digest string, data []byte) {
 	t.Helper()

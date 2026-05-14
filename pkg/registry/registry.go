@@ -199,6 +199,20 @@ func (p *Pusher) pushMultiArch(ctx context.Context, req ImagePush, walker *distr
 	return Report{Image: req.Source, Success: true}
 }
 
+// registryError maps an HTTP status code to a classified error based on the
+// operation context. It centralizes the auth/retriable/unexpected classification
+// so all registry interactions produce consistent error messages.
+func registryError(statusCode int, context string) error {
+	switch statusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return fmt.Errorf("registry authentication failed: %s", context)
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return fmt.Errorf("registry temporarily unavailable (status %d): %s", statusCode, context)
+	default:
+		return fmt.Errorf("unexpected status %d %s", statusCode, context)
+	}
+}
+
 func (p *Pusher) manifestExists(ctx context.Context, repo, ref string) (bool, error) {
 	url := fmt.Sprintf("%s/v2/%s/manifests/%s", p.cfg.Registry, repo, ref)
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
@@ -218,12 +232,8 @@ func (p *Pusher) manifestExists(ctx context.Context, repo, ref string) (bool, er
 		return true, nil
 	case http.StatusNotFound:
 		return false, nil
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return false, fmt.Errorf("registry authentication failed: %s", url)
-	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		return false, fmt.Errorf("registry temporarily unavailable (status %d): %s", resp.StatusCode, url)
 	default:
-		return false, fmt.Errorf("unexpected status %d from HEAD %s", resp.StatusCode, url)
+		return false, registryError(resp.StatusCode, "from HEAD "+url)
 	}
 }
 
@@ -240,19 +250,15 @@ func (p *Pusher) pushBlob(ctx context.Context, repo, digest string, walker *dist
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil // Blob already exists
 	case http.StatusNotFound:
 		// Proceed to upload
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return fmt.Errorf("registry authentication failed: %s", url)
-	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		return fmt.Errorf("registry temporarily unavailable (status %d): %s", resp.StatusCode, url)
 	default:
-		return fmt.Errorf("unexpected status %d checking blob %s", resp.StatusCode, digest)
+		return registryError(resp.StatusCode, "checking blob "+digest)
 	}
 
 	// Read blob data from disk
@@ -273,10 +279,10 @@ func (p *Pusher) pushBlob(ctx context.Context, repo, digest string, walker *dist
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("unexpected status %d starting blob upload", resp.StatusCode)
+		return registryError(resp.StatusCode, "starting blob upload")
 	}
 
 	location := resp.Header.Get("Location")
@@ -308,10 +314,10 @@ func (p *Pusher) pushBlob(ctx context.Context, repo, digest string, walker *dist
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("unexpected status %d completing blob upload", resp.StatusCode)
+		return registryError(resp.StatusCode, "completing blob upload")
 	}
 
 	return nil
@@ -330,11 +336,11 @@ func (p *Pusher) pushManifest(ctx context.Context, repo, ref string, data []byte
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("unexpected status %d pushing manifest", resp.StatusCode)
+		return registryError(resp.StatusCode, "pushing manifest")
 	}
 
 	return nil
