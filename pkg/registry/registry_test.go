@@ -587,6 +587,229 @@ func TestPusher_Push_TokenAuth(t *testing.T) {
 	}
 }
 
+func TestPusher_Push_AuthFailure(t *testing.T) {
+	mr := &mockRegistry{
+		blobs:     make(map[string]bool),
+		manifests: make(map[string][]byte),
+		requests:  make([]string, 0),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v2/", func(w http.ResponseWriter, r *http.Request) {
+		mr.mu.Lock()
+		mr.requests = append(mr.requests, r.Method+" "+r.URL.Path)
+		mr.mu.Unlock()
+
+		if r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	mr.server = httptest.NewServer(mux)
+	defer mr.server.Close()
+
+	tmpDir := t.TempDir()
+	manifestDigest := "authfail123"
+	manifestJSON := []byte(`{
+		"schemaVersion": 2,
+		"mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+		"config": {
+			"mediaType": "application/vnd.docker.container.image.v1+json",
+			"size": 7023,
+			"digest": "sha256:configdigest"
+		},
+		"layers": []
+	}`)
+	createMockBlob(t, tmpDir, manifestDigest, manifestJSON)
+	createMockBlob(t, tmpDir, "configdigest", []byte("config data"))
+
+	walker := distribution.NewWalker(tmpDir)
+	img := distribution.Image{
+		SourceRef:   "nginx:latest",
+		Repository:  "library/nginx",
+		Tag:         "latest",
+		Digest:      "sha256:" + manifestDigest,
+		IsMultiArch: false,
+	}
+
+	p := NewPusher(Config{
+		Registry: mr.server.URL,
+	})
+
+	reqs := []ImagePush{
+		{Source: img, DestRepo: "prod/nginx", Tag: "latest"},
+	}
+
+	reports := p.Push(context.Background(), reqs, walker, nil)
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+	if reports[0].Success {
+		t.Fatal("expected failure due to auth error")
+	}
+	if reports[0].Error == nil {
+		t.Fatal("expected error in report")
+	}
+	if !strings.Contains(reports[0].Error.Error(), "authentication failed") {
+		t.Fatalf("expected error to contain 'authentication failed', got: %v", reports[0].Error)
+	}
+}
+
+func TestPusher_Push_RetriableFailure(t *testing.T) {
+	mr := &mockRegistry{
+		blobs:     make(map[string]bool),
+		manifests: make(map[string][]byte),
+		requests:  make([]string, 0),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v2/", func(w http.ResponseWriter, r *http.Request) {
+		mr.mu.Lock()
+		mr.requests = append(mr.requests, r.Method+" "+r.URL.Path)
+		mr.mu.Unlock()
+
+		if r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	mr.server = httptest.NewServer(mux)
+	defer mr.server.Close()
+
+	tmpDir := t.TempDir()
+	manifestDigest := "retry123"
+	manifestJSON := []byte(`{
+		"schemaVersion": 2,
+		"mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+		"config": {
+			"mediaType": "application/vnd.docker.container.image.v1+json",
+			"size": 7023,
+			"digest": "sha256:configdigest"
+		},
+		"layers": [
+			{
+				"mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+				"size": 32654,
+				"digest": "sha256:layerdigest"
+			}
+		]
+	}`)
+	createMockBlob(t, tmpDir, manifestDigest, manifestJSON)
+	createMockBlob(t, tmpDir, "configdigest", []byte("config data"))
+	createMockBlob(t, tmpDir, "layerdigest", []byte("layer data"))
+
+	walker := distribution.NewWalker(tmpDir)
+	img := distribution.Image{
+		SourceRef:   "nginx:latest",
+		Repository:  "library/nginx",
+		Tag:         "latest",
+		Digest:      "sha256:" + manifestDigest,
+		IsMultiArch: false,
+	}
+
+	p := NewPusher(Config{
+		Registry: mr.server.URL,
+	})
+
+	reqs := []ImagePush{
+		{Source: img, DestRepo: "prod/nginx", Tag: "latest"},
+	}
+
+	reports := p.Push(context.Background(), reqs, walker, nil)
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+	if reports[0].Success {
+		t.Fatal("expected failure due to retriable error")
+	}
+	if reports[0].Error == nil {
+		t.Fatal("expected error in report")
+	}
+	if !strings.Contains(reports[0].Error.Error(), "temporarily unavailable") {
+		t.Fatalf("expected error to contain 'temporarily unavailable', got: %v", reports[0].Error)
+	}
+}
+
+func TestPusher_Push_UnexpectedStatus(t *testing.T) {
+	mr := &mockRegistry{
+		blobs:     make(map[string]bool),
+		manifests: make(map[string][]byte),
+		requests:  make([]string, 0),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v2/", func(w http.ResponseWriter, r *http.Request) {
+		mr.mu.Lock()
+		mr.requests = append(mr.requests, r.Method+" "+r.URL.Path)
+		mr.mu.Unlock()
+
+		if r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/") {
+			w.WriteHeader(http.StatusTeapot) // 418
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	mr.server = httptest.NewServer(mux)
+	defer mr.server.Close()
+
+	tmpDir := t.TempDir()
+	manifestDigest := "unexpected123"
+	manifestJSON := []byte(`{
+		"schemaVersion": 2,
+		"mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+		"config": {
+			"mediaType": "application/vnd.docker.container.image.v1+json",
+			"size": 7023,
+			"digest": "sha256:configdigest"
+		},
+		"layers": []
+	}`)
+	createMockBlob(t, tmpDir, manifestDigest, manifestJSON)
+	createMockBlob(t, tmpDir, "configdigest", []byte("config data"))
+
+	walker := distribution.NewWalker(tmpDir)
+	img := distribution.Image{
+		SourceRef:   "nginx:latest",
+		Repository:  "library/nginx",
+		Tag:         "latest",
+		Digest:      "sha256:" + manifestDigest,
+		IsMultiArch: false,
+	}
+
+	p := NewPusher(Config{
+		Registry: mr.server.URL,
+	})
+
+	reqs := []ImagePush{
+		{Source: img, DestRepo: "prod/nginx", Tag: "latest"},
+	}
+
+	reports := p.Push(context.Background(), reqs, walker, nil)
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+	if reports[0].Success {
+		t.Fatal("expected failure due to unexpected status")
+	}
+	if reports[0].Error == nil {
+		t.Fatal("expected error in report")
+	}
+	if !strings.Contains(reports[0].Error.Error(), "unexpected status") {
+		t.Fatalf("expected error to contain 'unexpected status', got: %v", reports[0].Error)
+	}
+}
+
 func TestPusher_Push_PartialFailure(t *testing.T) {
 	// Create a registry that rejects one specific blob
 	mr := &mockRegistry{

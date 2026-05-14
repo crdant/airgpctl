@@ -218,6 +218,10 @@ func (p *Pusher) manifestExists(ctx context.Context, repo, ref string) (bool, er
 		return true, nil
 	case http.StatusNotFound:
 		return false, nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return false, fmt.Errorf("registry authentication failed: %s", url)
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return false, fmt.Errorf("registry temporarily unavailable (status %d): %s", resp.StatusCode, url)
 	default:
 		return false, fmt.Errorf("unexpected status %d from HEAD %s", resp.StatusCode, url)
 	}
@@ -238,10 +242,16 @@ func (p *Pusher) pushBlob(ctx context.Context, repo, digest string, walker *dist
 	}
 	resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
 		return nil // Blob already exists
-	}
-	if resp.StatusCode != http.StatusNotFound {
+	case http.StatusNotFound:
+		// Proceed to upload
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return fmt.Errorf("registry authentication failed: %s", url)
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return fmt.Errorf("registry temporarily unavailable (status %d): %s", resp.StatusCode, url)
+	default:
 		return fmt.Errorf("unexpected status %d checking blob %s", resp.StatusCode, digest)
 	}
 
