@@ -12,7 +12,7 @@
 - [x] **U5. Safer chart directory selection after extraction**
 - [x] **U6. Improve registry HTTP error classification**
 - [x] **U7. Add unit-test coverage for new public functions**
-- [ ] **U8. Fix error message capitalization**
+- [x] **U8. Fix error message capitalization**
 
 ## Previous Plan (Completed)
 [docs/plans/2026-05-14-001-feat-cobra-cli-subcommands-plan.md](docs/plans/2026-05-14-001-feat-cobra-cli-subcommands-plan.md)
@@ -208,3 +208,15 @@
 
 **Commits:** `210755f`, `b56192c`
 **Learning documented:** `docs/solutions/best-practices/unit-test-coverage-public-functions-go-2026-05-14.md`
+
+### U8 — Fix error message capitalization (2026-05-14)
+
+**Files created/modified:**
+- `pkg/bundle/bundle.go` — changed error message from `"airgap.yaml missing SavedImages field"` to `"airgap.yaml missing savedImages field"`
+- `pkg/bundle/bundle_test.go` — aligned test case name with corrected error message; added `wantErrMsg` assertion to prevent silent regressions in error text
+
+**Tests:** `go test ./pkg/bundle/...` passes.
+**Build:** `go build ./cmd/airgapctl` produces working binary.
+
+**Commits:** `0980780`, `2ae7078`
+**Learning documented:** `docs/solutions/conventions/assert-error-message-text-test-names-sync-2026-05-14.md`
