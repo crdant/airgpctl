@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestExtractImageRefs_NoFalsePositives(t *testing.T) {
@@ -279,6 +281,112 @@ func TestFindChartDir_MissingChartYAML(t *testing.T) {
 	want := chartDir
 	if got != want {
 		t.Errorf("findChartDir(%q, %q) = %q, want %q", tmpDir, "chart", got, want)
+	}
+}
+
+// --- extractTarball tests ---
+
+func TestExtractTarball_HappyPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	tarPath := filepath.Join(tmpDir, "test.tgz")
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	// Add a directory
+	_ = tw.WriteHeader(&tar.Header{
+		Name:     "subdir/",
+		Typeflag: tar.TypeDir,
+		Mode:     0755,
+	})
+
+	// Add a file
+	content := []byte("hello world")
+	_ = tw.WriteHeader(&tar.Header{
+		Name: "subdir/file.txt",
+		Size: int64(len(content)),
+		Mode: 0644,
+	})
+	_, _ = tw.Write(content)
+
+	_ = tw.Close()
+	_ = gw.Close()
+	_ = os.WriteFile(tarPath, buf.Bytes(), 0644)
+
+	dst := filepath.Join(tmpDir, "extract")
+	if err := extractTarball(tarPath, dst); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dst, "subdir", "file.txt"))
+	if err != nil {
+		t.Fatalf("reading extracted file: %v", err)
+	}
+	if string(data) != "hello world" {
+		t.Errorf("extracted content = %q, want %q", string(data), "hello world")
+	}
+}
+
+// --- writeValuesYAML tests ---
+
+func TestWriteValuesYAML_ValidYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "values.yaml")
+	values := map[string]interface{}{
+		"image": map[string]interface{}{
+			"registry":   "myreg.io",
+			"repository": "myapp",
+			"tag":        "1.0",
+		},
+	}
+
+	if err := writeValuesYAML(values, outPath); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("reading output file: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("output is not valid YAML: %v", err)
+	}
+
+	img, ok := parsed["image"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected image key in parsed YAML")
+	}
+	if img["registry"] != "myreg.io" {
+		t.Errorf("registry = %v, want myreg.io", img["registry"])
+	}
+	if img["repository"] != "myapp" {
+		t.Errorf("repository = %v, want myapp", img["repository"])
+	}
+	if img["tag"] != "1.0" {
+		t.Errorf("tag = %v, want 1.0", img["tag"])
+	}
+}
+
+func TestWriteValuesYAML_CreatesParentDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "a", "b", "c", "values.yaml")
+	values := map[string]interface{}{
+		"key": "value",
+	}
+
+	if err := writeValuesYAML(values, outPath); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(outPath); os.IsNotExist(err) {
+		t.Fatalf("expected output file to be created at %s", outPath)
+	}
+
+	if _, err := os.Stat(filepath.Join(tmpDir, "a", "b", "c")); os.IsNotExist(err) {
+		t.Fatal("expected parent directories to be created")
 	}
 }
 

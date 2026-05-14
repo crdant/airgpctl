@@ -473,3 +473,104 @@ func TestGenerator_Generate_OutputFileCreated(t *testing.T) {
 		t.Fatalf("expected output file to be created at %s", outputPath)
 	}
 }
+
+// --- RemapChartValues tests ---
+
+func TestRemapChartValues_NestedImageDefinitions(t *testing.T) {
+	chartValues := map[string]interface{}{
+		"image": map[string]interface{}{
+			"registry":   "docker.io",
+			"repository": "nginx",
+			"tag":        "latest",
+		},
+		"otherKey": "preserved",
+	}
+
+	images := []distribution.Image{
+		{SourceRef: "nginx:latest", Repository: "library/nginx", Tag: "latest"},
+	}
+
+	result := RemapChartValues(chartValues, images, "myreg.io", "myns")
+
+	// Verify structure is preserved and unmapped keys remain
+	if result["otherKey"] != "preserved" {
+		t.Errorf("otherKey = %v, want 'preserved'", result["otherKey"])
+	}
+
+	img, ok := result["image"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected image to be a map")
+	}
+	if img["registry"] != "myreg.io" {
+		t.Errorf("registry = %v, want 'myreg.io'", img["registry"])
+	}
+	if img["repository"] != "myns/nginx" {
+		t.Errorf("repository = %v, want 'myns/nginx'", img["repository"])
+	}
+	if img["tag"] != "latest" {
+		t.Errorf("tag = %v, want 'latest'", img["tag"])
+	}
+}
+
+func TestRemapChartValues_ReleaseImagesArray(t *testing.T) {
+	chartValues := map[string]interface{}{
+		"releaseImages": []interface{}{
+			"docker.io/nginx:latest",
+			"myregistry.com/app:1.0",
+		},
+	}
+
+	images := []distribution.Image{
+		{SourceRef: "nginx:latest", Repository: "library/nginx", Tag: "latest"},
+		{SourceRef: "myregistry.com/app:1.0", Repository: "myregistry.com/app", Tag: "1.0"},
+	}
+
+	result := RemapChartValues(chartValues, images, "myreg.io", "myns")
+
+	arr, ok := result["releaseImages"].([]interface{})
+	if !ok {
+		t.Fatal("expected releaseImages to be an array")
+	}
+	if len(arr) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(arr))
+	}
+	want0 := "myreg.io/myns/nginx:latest"
+	if arr[0] != want0 {
+		t.Errorf("releaseImages[0] = %v, want %v", arr[0], want0)
+	}
+	want1 := "myreg.io/myns/app:1.0"
+	if arr[1] != want1 {
+		t.Errorf("releaseImages[1] = %v, want %v", arr[1], want1)
+	}
+}
+
+func TestRemapChartValues_NoMatchingImages(t *testing.T) {
+	chartValues := map[string]interface{}{
+		"image": map[string]interface{}{
+			"registry":   "docker.io",
+			"repository": "nginx",
+			"tag":        "latest",
+		},
+	}
+
+	images := []distribution.Image{
+		{SourceRef: "postgres:14", Repository: "library/postgres", Tag: "14"},
+	}
+
+	result := RemapChartValues(chartValues, images, "myreg.io", "myns")
+
+	// Output should equal input when no images match
+	img, ok := result["image"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected image to be a map")
+	}
+	if img["registry"] != "docker.io" {
+		t.Errorf("registry = %v, want 'docker.io'", img["registry"])
+	}
+	if img["repository"] != "nginx" {
+		t.Errorf("repository = %v, want 'nginx'", img["repository"])
+	}
+	if img["tag"] != "latest" {
+		t.Errorf("tag = %v, want 'latest'", img["tag"])
+	}
+}

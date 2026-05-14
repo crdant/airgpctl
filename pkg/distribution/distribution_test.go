@@ -386,3 +386,76 @@ func TestWalker_ResolveImages_InvalidManifestBlob(t *testing.T) {
 		t.Fatal("expected error for invalid manifest blob")
 	}
 }
+
+// --- findRepo tests ---
+
+func TestFindRepo_DirectMatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestJSON := makeSingleArchManifest(t, "application/vnd.docker.distribution.manifest.v2+json")
+	createMockDistributionLayout(t, tmpDir, "library/nginx", "latest", "abc123", manifestJSON)
+
+	w := NewWalker(tmpDir)
+	repo, err := w.findRepo("nginx:latest")
+	if err != nil {
+		t.Fatalf("findRepo error: %v", err)
+	}
+	if repo != "library/nginx" {
+		t.Errorf("findRepo() = %q, want %q", repo, "library/nginx")
+	}
+}
+
+func TestFindRepo_Fallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestJSON := makeSingleArchManifest(t, "application/vnd.docker.distribution.manifest.v2+json")
+	// Create layout with repo "nginx" (not "library/nginx")
+	createMockDistributionLayout(t, tmpDir, "nginx", "latest", "abc123", manifestJSON)
+
+	w := NewWalker(tmpDir)
+	// parseImageRef("nginx:latest") returns repo="library/nginx", but the layout only has "nginx"
+	repo, err := w.findRepo("nginx:latest")
+	if err != nil {
+		t.Fatalf("findRepo error: %v", err)
+	}
+	if repo != "nginx" {
+		t.Errorf("findRepo() = %q, want %q", repo, "nginx")
+	}
+}
+
+func TestFindRepo_NoMatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestJSON := makeSingleArchManifest(t, "application/vnd.docker.distribution.manifest.v2+json")
+	createMockDistributionLayout(t, tmpDir, "postgres", "latest", "abc123", manifestJSON)
+
+	w := NewWalker(tmpDir)
+	_, err := w.findRepo("nginx:latest")
+	if err == nil {
+		t.Fatal("expected error for no matching repository, got nil")
+	}
+}
+
+// --- NewWalker nested layout tests ---
+
+func TestNewWalker_NestedLayout(t *testing.T) {
+	tmpDir := t.TempDir()
+	nested := filepath.Join(tmpDir, "images", "docker", "registry", "v2")
+	if err := os.MkdirAll(nested, 0755); err != nil {
+		t.Fatalf("creating nested layout: %v", err)
+	}
+
+	w := NewWalker(tmpDir)
+	if w.basePath != nested {
+		t.Errorf("basePath = %q, want %q", w.basePath, nested)
+	}
+}
+
+func TestNewWalker_NonNestedLayout(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, "repositories", "test"), 0755); err != nil {
+		t.Fatalf("creating repo dir: %v", err)
+	}
+
+	w := NewWalker(tmpDir)
+	if w.basePath != tmpDir {
+		t.Errorf("basePath = %q, want %q", w.basePath, tmpDir)
+	}
+}
