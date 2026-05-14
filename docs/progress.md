@@ -6,7 +6,7 @@
 ## Implementation Units (Review Findings Fixes)
 
 - [x] **U1. Wire bearer-token auth and surface docker-config errors**
-- [ ] **U2. Harden chart image reference extraction**
+- [x] **U2. Harden chart image reference extraction**
 - [ ] **U3. Deduplicate image-path helpers into pkg/distribution**
 - [ ] **U4. Graceful tar/gzip detection in bundle extraction**
 - [ ] **U5. Safer chart directory selection after extraction**
@@ -122,3 +122,16 @@
 
 **Commits:** `c50aae3`, `09c2920`
 **Learning documented:** `docs/solutions/best-practices/registry-auth-docker-config-error-handling-2026-05-14.md`
+
+### U2 — Harden chart image reference extraction (2026-05-14)
+
+**Files created/modified:**
+- `cmd/airgapctl/values.go` — `extractImageRefs` now uses `strings.HasPrefix` for `repository:` and `image:` keys instead of substring search; handles single-quoted and unquoted values; array-item heuristic relaxed to catch Docker Hub short names; `isChartTarball` tightened to chart tarballs only; `extractTarball` skips PAX extended headers; removed dead `valuesOpts.template` field
+- `cmd/airgapctl/values_test.go` — new file with `TestExtractImageRefs_NoFalsePositives`, `TestExtractImageRefs_RepositoryKey`, `TestExtractImageRefs_ImageKey`, `TestExtractImageRefs_ImageKeySingleQuoted`, `TestExtractImageRefs_ImageKeyUnquoted`, `TestExtractImageRefs_ArrayItems`, `TestExtractImageRefs_EmptyValues`, `TestIsChartTarball`, `TestExtractTarball_DirectoryTraversal`, `TestWriteValuesYAML`
+- `pkg/values/values.go` — `ChartMatcher.Match` now uses exact short-name equality instead of bidirectional `strings.Contains`
+
+**Tests:** `go test ./cmd/airgapctl/...` and `go test ./pkg/values/...` pass.
+**Build:** `go build ./cmd/airgapctl` produces working binary.
+
+**Commits:** `1ab3483`, `50f93d2`
+**Learning documented:** `docs/solutions/best-practices/chart-image-reference-extraction-2026-05-14.md`
