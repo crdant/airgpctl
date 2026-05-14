@@ -1,8 +1,12 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -10,10 +14,12 @@ import (
 	"github.com/replicatedhq/airgapctl/pkg/distribution"
 	"github.com/replicatedhq/airgapctl/pkg/values"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var valuesOpts struct {
 	chart     string
+	version   string
 	registry  string
 	namespace string
 	output    string
@@ -48,13 +54,77 @@ func newValuesCmd() *cobra.Command {
 			}
 
 			walker := distribution.NewWalker(extractDir)
-			images, err := walker.ResolveImages(b.SavedImages)
+			images, err := walker.ResolveImages(b.Spec.SavedImages)
 			if err != nil {
 				return fmt.Errorf("resolving images: %w", err)
 			}
 
+		chartDir := valuesOpts.chart
+		// If chart is an OCI reference, pull it with helm to a temp directory
+		if strings.HasPrefix(chartDir, "oci://") {
+			tmpChartDir, err := os.MkdirTemp("", "airgapctl-chart-*")
+			if err != nil {
+				return fmt.Errorf("creating temp chart directory: %w", err)
+			}
+			defer os.RemoveAll(tmpChartDir)
+
+			helmArgs := []string{"pull", chartDir, "--untar", "--untardir", tmpChartDir}
+			if valuesOpts.version != "" {
+				helmArgs = append(helmArgs, "--version", valuesOpts.version)
+			}
+			if globalOpts.verbose {
+				fmt.Fprintf(cmd.OutOrStdout(), "Pulling chart %s...\n", chartDir)
+			}
+			out, err := exec.Command("helm", helmArgs...).CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("helm pull failed: %w\n%s", err, string(out))
+			}
+
+			// helm --untar extracts into a subdirectory named after the chart.
+			// Find the first directory inside tmpChartDir.
+			entries, err := os.ReadDir(tmpChartDir)
+			if err != nil {
+				return fmt.Errorf("reading extracted chart directory: %w", err)
+			}
+			for _, entry := range entries {
+				if entry.IsDir() {
+					chartDir = filepath.Join(tmpChartDir, entry.Name())
+					break
+				}
+			}
+			if chartDir == valuesOpts.chart {
+				return fmt.Errorf("helm pull did not produce an extracted chart directory")
+			}
+		} else if isChartTarball(chartDir) {
+			// Extract local chart tarball to a temp directory
+			tmpChartDir, err := os.MkdirTemp("", "airgapctl-chart-*")
+			if err != nil {
+				return fmt.Errorf("creating temp chart directory: %w", err)
+			}
+			defer os.RemoveAll(tmpChartDir)
+
+			if err := extractTarball(chartDir, tmpChartDir); err != nil {
+				return fmt.Errorf("extracting chart tarball: %w", err)
+			}
+
+			// Find the first directory inside tmpChartDir (the chart name)
+			entries, err := os.ReadDir(tmpChartDir)
+			if err != nil {
+				return fmt.Errorf("reading extracted chart directory: %w", err)
+			}
+			for _, entry := range entries {
+				if entry.IsDir() {
+					chartDir = filepath.Join(tmpChartDir, entry.Name())
+					break
+				}
+			}
+			if chartDir == valuesOpts.chart {
+				return fmt.Errorf("chart tarball did not produce an extracted chart directory")
+			}
+		}
+
 			// Read chart values.yaml to detect image references for filtering
-			chartValuesPath := filepath.Join(valuesOpts.chart, "values.yaml")
+			chartValuesPath := filepath.Join(chartDir, "values.yaml")
 			chartData, err := os.ReadFile(chartValuesPath)
 			if err != nil {
 				return fmt.Errorf("reading chart values.yaml: %w", err)
@@ -64,55 +134,58 @@ func newValuesCmd() *cobra.Command {
 			chartRefs := extractImageRefs(string(chartData))
 			matcher := values.NewChartMatcher(chartRefs)
 
-			gen := values.Generator{
-				Registry:  valuesOpts.registry,
-				Namespace: valuesOpts.namespace,
-				Template:  valuesOpts.template,
-				Filter:    matcher.Match,
-			}
-
-			if err := gen.Generate(images, valuesOpts.output); err != nil {
-				return fmt.Errorf("generating values file: %w", err)
-			}
-
-			matched := 0
+			// Filter images to only those referenced by the chart
+			var chartImages []distribution.Image
 			for _, img := range images {
-				if matcher.Match(img.SourceRef) {
-					matched++
+				if matcher.Match(imageNameFromRef(img.SourceRef)) {
+					chartImages = append(chartImages, img)
 				}
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Wrote values file to %s (%d/%d images matched)\n", valuesOpts.output, matched, len(images))
+			// Parse chart values as nested map for structure-preserving output
+			var chartValues map[string]interface{}
+			if err := yaml.Unmarshal(chartData, &chartValues); err != nil {
+				return fmt.Errorf("parsing chart values.yaml: %w", err)
+			}
+
+			remapped := values.RemapChartValues(chartValues, chartImages, valuesOpts.registry, valuesOpts.namespace)
+
+			if err := writeValuesYAML(remapped, valuesOpts.output); err != nil {
+				return fmt.Errorf("generating values file: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Wrote values file to %s (%d/%d images matched)\n", valuesOpts.output, len(chartImages), len(images))
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&valuesOpts.chart, "chart", "", "path to Helm chart directory (required)")
+	cmd.Flags().StringVar(&valuesOpts.chart, "chart", "", "path to Helm chart directory or OCI reference (required)")
+	cmd.Flags().StringVar(&valuesOpts.version, "version", "", "chart version (required for OCI charts)")
 	cmd.Flags().StringVar(&valuesOpts.registry, "registry", "", "destination registry URL")
 	cmd.Flags().StringVar(&valuesOpts.namespace, "namespace", "", "destination namespace/prefix")
 	cmd.Flags().StringVar(&valuesOpts.output, "output", "values-airgap.yaml", "output values file path")
-	cmd.Flags().StringVar(&valuesOpts.template, "template", "", "Go template for destination image path")
 
 	_ = cmd.MarkFlagRequired("chart")
 
 	return cmd
 }
 
-// extractImageRefs performs a naive extraction of potential image references from chart values text.
+// extractImageRefs performs extraction of potential image references from chart values text.
+// It looks for repository fields, full image references in arrays, and inline image strings.
 func extractImageRefs(data string) []string {
 	var refs []string
 	for _, line := range strings.Split(data, "\n") {
 		line = strings.TrimSpace(line)
-		// Look for repository: values or inline image references
-		if idx := strings.Index(line, "repository:"); idx >= 0 {
-			repo := strings.TrimSpace(line[idx+len("repository:"):])
+		// Look for repository: values
+		if strings.HasPrefix(line, "repository:") {
+			repo := strings.TrimSpace(line[len("repository:"):])
 			if repo != "" {
 				refs = append(refs, repo)
 			}
 		}
-		// Also look for image: lines that might contain full references
-		if idx := strings.Index(line, "image:"); idx >= 0 {
-			img := strings.TrimSpace(line[idx+len("image:"):])
+		// Look for image: lines that might contain full references
+		if strings.HasPrefix(line, "image:") {
+			img := strings.TrimSpace(line[len("image:"):])
 			if img != "" && img[0] == '"' {
 				img = strings.Trim(img, "\"")
 				if img != "" {
@@ -120,6 +193,108 @@ func extractImageRefs(data string) []string {
 				}
 			}
 		}
+		// Look for array items that are full image references (e.g. releaseImages:)
+		if strings.HasPrefix(line, "- ") {
+			item := strings.TrimPrefix(line, "- ")
+			item = strings.TrimSpace(item)
+			item = strings.Trim(item, "\"")
+			if item != "" && strings.Contains(item, "/") && strings.Contains(item, ":") {
+				refs = append(refs, item)
+			}
+		}
 	}
 	return refs
+}
+
+// isChartTarball returns true if the path looks like a Helm chart tarball.
+func isChartTarball(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".tgz" || ext == ".gz" || strings.HasSuffix(path, ".tar.gz")
+}
+
+// extractTarball extracts a gzipped tar archive to the destination directory.
+func extractTarball(src, dst string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(dst, header.Name)
+		// Prevent directory traversal
+		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(dst)+string(os.PathSeparator)) {
+			return fmt.Errorf("invalid tar entry: %s", header.Name)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return err
+			}
+			out, err := os.Create(target)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				return err
+			}
+			out.Close()
+		case tar.TypeSymlink, tar.TypeLink:
+			// Skip symlinks and hard links to prevent directory traversal attacks
+			continue
+		}
+	}
+	return nil
+}
+
+// imageNameFromRef extracts the short image name from a full reference or repository path.
+func imageNameFromRef(ref string) string {
+	// Strip tag if present
+	if idx := strings.LastIndex(ref, ":"); idx > strings.LastIndex(ref, "/") {
+		ref = ref[:idx]
+	}
+	idx := strings.LastIndex(ref, "/")
+	if idx == -1 {
+		return ref
+	}
+	return ref[idx+1:]
+}
+
+// writeValuesYAML marshals the values map to YAML and writes it to outputPath.
+func writeValuesYAML(values map[string]interface{}, outputPath string) error {
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("creating output directory: %w", err)
+	}
+
+	data, err := yaml.Marshal(values)
+	if err != nil {
+		return fmt.Errorf("marshaling values YAML: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+		return fmt.Errorf("writing values file: %w", err)
+	}
+
+	return nil
 }
