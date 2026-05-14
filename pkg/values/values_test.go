@@ -421,25 +421,6 @@ func TestGenerator_Generate_DuplicateImageName(t *testing.T) {
 	}
 }
 
-func TestImageName(t *testing.T) {
-	tests := []struct {
-		repo string
-		want string
-	}{
-		{"library/nginx", "nginx"},
-		{"registry.com/ns/app", "app"},
-		{"nginx", "nginx"},
-		{"", ""},
-	}
-
-	for _, tt := range tests {
-		got := imageName(tt.repo)
-		if got != tt.want {
-			t.Errorf("imageName(%q) = %q, want %q", tt.repo, got, tt.want)
-		}
-	}
-}
-
 func TestChartMatcher(t *testing.T) {
 	matcher := NewChartMatcher([]string{"nginx", "redis"})
 

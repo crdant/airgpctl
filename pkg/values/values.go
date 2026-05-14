@@ -30,7 +30,7 @@ func (g *Generator) Generate(images []distribution.Image, outputPath string) err
 	entries := make(map[string]string, len(images))
 
 	for _, img := range images {
-		name := imageName(img.Repository)
+		name := distribution.ImageName(img.Repository)
 		if g.Filter != nil && !g.Filter(name) {
 			continue
 		}
@@ -70,9 +70,9 @@ func (g *Generator) applyTemplate(sourceRef, tag string) (string, error) {
 		tmpl = "{registry}/{namespace}/{path}:{tag}"
 	}
 
-	name := imageName(sourceRef)
-	path := imagePath(sourceRef)
-	repo := stripTag(sourceRef)
+	name := distribution.ImageName(sourceRef)
+	path := distribution.ImagePath(sourceRef)
+	repo := distribution.StripTag(sourceRef)
 
 	// Build a replacement map
 	vars := map[string]string{
@@ -109,47 +109,6 @@ func (g *Generator) applyTemplate(sourceRef, tag string) (string, error) {
 	return result, nil
 }
 
-// imageName extracts the short image name from a repository path or full reference.
-// e.g. "library/nginx" → "nginx", "registry.com/ns/app:1.0" → "app"
-func imageName(repo string) string {
-	// Strip tag if present
-	if idx := strings.LastIndex(repo, ":"); idx > strings.LastIndex(repo, "/") {
-		repo = repo[:idx]
-	}
-	idx := strings.LastIndex(repo, "/")
-	if idx == -1 {
-		return repo
-	}
-	return repo[idx+1:]
-}
-
-// imagePath extracts the repository path after the source registry host from a
-// full image reference. If no registry host is detected, it returns the entire
-// repository path.
-// e.g. "registry.com/ns/app:1.0" → "ns/app", "library/nginx:latest" → "library/nginx"
-func imagePath(ref string) string {
-	ref = stripTag(ref)
-
-	parts := strings.SplitN(ref, "/", 2)
-	if len(parts) == 1 {
-		return ref
-	}
-
-	// If the first component contains a dot or colon, it's a registry host
-	if strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") {
-		return parts[1]
-	}
-	return ref
-}
-
-// stripTag removes the tag from a full image reference.
-func stripTag(ref string) string {
-	if idx := strings.LastIndex(ref, ":"); idx > strings.LastIndex(ref, "/") {
-		return ref[:idx]
-	}
-	return ref
-}
-
 // ChartMatcher implements partial matching of image names against a list of chart references.
 type ChartMatcher struct {
 	refs []string
@@ -164,9 +123,9 @@ func NewChartMatcher(refs []string) *ChartMatcher {
 // Matching is done by short image name (last path component) to handle
 // differences between bundle proxy paths and chart repository paths.
 func (c *ChartMatcher) Match(name string) bool {
-	shortName := imageName(name)
+	shortName := distribution.ImageName(name)
 	for _, ref := range c.refs {
-		if shortName == imageName(ref) {
+		if shortName == distribution.ImageName(ref) {
 			return true
 		}
 	}
@@ -179,7 +138,7 @@ func (c *ChartMatcher) Match(name string) bool {
 func RemapChartValues(chartValues map[string]interface{}, images []distribution.Image, registry, namespace string) map[string]interface{} {
 	imageMap := make(map[string]distribution.Image)
 	for _, img := range images {
-		name := imageName(img.SourceRef)
+		name := distribution.ImageName(img.SourceRef)
 		imageMap[name] = img
 	}
 
@@ -193,7 +152,7 @@ func walkChart(node interface{}, path []string, result map[string]interface{}, i
 	case map[string]interface{}:
 		if isImageDefinition(v) {
 			repo, _ := v["repository"].(string)
-			name := imageName(repo)
+			name := distribution.ImageName(repo)
 			if img, ok := imageMap[name]; ok {
 				remapped := remapImageDefinition(v, img, registry, namespace)
 				setAtPath(result, path, remapped)
@@ -211,7 +170,7 @@ func walkChart(node interface{}, path []string, result map[string]interface{}, i
 		matched := false
 		for _, item := range v {
 			if s, ok := item.(string); ok && looksLikeImageRef(s) {
-				name := imageName(s)
+				name := distribution.ImageName(s)
 				if img, ok := imageMap[name]; ok {
 					ref := buildRemappedRef(img, registry, namespace)
 					remapped = append(remapped, ref)
@@ -252,7 +211,7 @@ func remapImageDefinition(m map[string]interface{}, img distribution.Image, regi
 	result["registry"] = registry
 	result["tag"] = img.Tag
 
-	path := imagePath(img.SourceRef)
+	path := distribution.ImagePath(img.SourceRef)
 	if namespace != "" {
 		result["repository"] = namespace + "/" + path
 	} else {
@@ -266,7 +225,7 @@ func looksLikeImageRef(s string) bool {
 }
 
 func buildRemappedRef(img distribution.Image, registry, namespace string) string {
-	path := imagePath(img.SourceRef)
+	path := distribution.ImagePath(img.SourceRef)
 	if namespace != "" {
 		path = namespace + "/" + path
 	}

@@ -8,32 +8,6 @@ import (
 	"testing"
 )
 
-func TestImagePath(t *testing.T) {
-	tests := []struct {
-		name     string
-		ref      string
-		expected string
-	}{
-		{"plain tag", "nginx:latest", "nginx"},
-		{"with namespace", "library/nginx:latest", "library/nginx"},
-		{"with registry host", "docker.io/library/nginx:latest", "library/nginx"},
-		{"with registry port", "localhost:5000/library/nginx:latest", "library/nginx"},
-		{"registry no tag", "docker.io/library/nginx", "library/nginx"},
-		{"localhost no tag", "localhost:5000/nginx", "nginx"},
-		{"digest ref", "docker.io/library/nginx@sha256:abc123", "library/nginx"},
-		{"registry digest", "registry.com/nginx@sha256:abc123", "nginx"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := imagePath(tt.ref)
-			if got != tt.expected {
-				t.Errorf("imagePath(%q) = %q, want %q", tt.ref, got, tt.expected)
-			}
-		})
-	}
-}
-
 func TestLoadDockerConfig_MissingFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDockerConfig := os.Getenv("DOCKER_CONFIG")

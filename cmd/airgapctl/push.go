@@ -77,7 +77,7 @@ func newPushCmd() *cobra.Command {
 			var pushRequests []registry.ImagePush
 			for _, img := range images {
 				// Extract full repository path from the original source ref, stripping the source registry host
-				destRepo := imagePath(img.SourceRef)
+				destRepo := distribution.ImagePath(img.SourceRef)
 				if pushOpts.namespace != "" {
 					// Prepend namespace while preserving the original image path
 					destRepo = pushOpts.namespace + "/" + destRepo
@@ -140,33 +140,6 @@ func newPushCmd() *cobra.Command {
 	_ = cmd.MarkFlagRequired("registry")
 
 	return cmd
-}
-
-// imagePath extracts the repository path after the source registry host from a
-// full image reference. If no registry host is detected, it returns the entire
-// repository path.
-// e.g. "registry.com/ns/app:1.0" → "ns/app", "library/nginx:latest" → "library/nginx"
-func imagePath(ref string) string {
-	// Strip digest if present (e.g. @sha256:abc123)
-	if idx := strings.LastIndex(ref, "@"); idx != -1 {
-		ref = ref[:idx]
-	}
-
-	// Strip tag if present
-	if idx := strings.LastIndex(ref, ":"); idx > strings.LastIndex(ref, "/") {
-		ref = ref[:idx]
-	}
-
-	parts := strings.SplitN(ref, "/", 2)
-	if len(parts) == 1 {
-		return ref
-	}
-
-	// If the first component contains a dot or colon, it's a registry host
-	if strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") {
-		return parts[1]
-	}
-	return ref
 }
 
 // dockerConfig mirrors the minimal structure of ~/.docker/config.json we need.
