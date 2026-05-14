@@ -23,26 +23,28 @@
 ## In Progress
 _None — pick from Backlog._
 
+## Completed (continued)
+- [x] **Registry push logic (R1, R2, R3, R11, R12, R13)**
+  - `Pusher` implements pure Go push via Docker Registry HTTP API V2
+  - `Push()` handles single-arch and multi-arch manifest lists with correct blob→manifest→list ordering
+  - Idempotent via HEAD checks on manifests and blobs before upload
+  - Progress callback reports `[current/total]` with image reference
+  - `[]Report` returns per-image success/failure/skip status
+  - Basic auth, TLS skip-verify, context cancellation, and HTTP timeout support
+  - Distribution helpers `ReadBlob()` and `ManifestBlobs()` parse manifest JSON to extract referenced digests
+  - Table-driven tests with mock `httptest` registry cover single-arch, multi-arch, idempotency, progress, auth, and partial failure
+  - Learning documented in `docs/solutions/design-patterns/pure-go-registry-push-docker-v2-on-disk-layout.md`
+
+## In Progress
+_None — pick from Backlog._
+
 ## Backlog (Priority Order)
-1. **Registry push logic (R1, R2, R3, R11, R12, R13)**
-   - Pure Go push directly from on-disk Docker v2 layout (no `registry serve`)
-   - Multi-arch manifest list support
-   - Idempotent push (skip already-present images)
-   - Progress reporting (`[3/12]` + elapsed time)
-   - Per-image success/failure reporting
-
-3. **Registry push logic (R1, R2, R3, R11, R12, R13)**
-   - Pure Go push directly from on-disk Docker v2 layout (no `registry serve`)
-   - Multi-arch manifest list support
-   - Idempotent push (skip already-present images)
-   - Progress reporting (`[3/12]` + elapsed time)
-   - Per-image success/failure reporting
-
-4. **CLI integration**
+1. **CLI integration**
    - Wire all packages into `cmd/airgapctl/main.go`
-   - Flags: bundle path, registry URL, credentials, output file, namespace, etc.
+   - Flags: bundle path, registry URL, credentials, output file, namespace, tag override, values-only mode, etc.
+   - Compose bundle → distribution → values → registry into a single command
 
-5. **Acceptance tests**
+2. **Acceptance tests**
    - AE1: End-to-end bundle load to registry
    - AE2: Values file generation
    - AE3: Progress reporting
@@ -55,3 +57,4 @@ _None — pick from Backlog._
 - Replicated API authentication (deferred to subsequent release)
 - Embedded cluster bundle support
 - Diff/incremental bundle support
+- Custom CA for private registries (TODO in Config)
