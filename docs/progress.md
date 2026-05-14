@@ -7,16 +7,14 @@
 
 - [x] **U1. Cobra CLI scaffolding and command structure**
 - [x] **U2. Bundle extraction and airgap.yaml parsing**
-- [ ] U3. Docker v2 layout traversal and manifest resolution
+- [x] **U3. Docker v2 layout traversal and manifest resolution**
 - [ ] U4. Registry push engine with multi-arch and idempotency
-- [ ] U5. Chart-structure-preserving values file generation
+- [x] **U5. Chart-structure-preserving values file generation**
 - [ ] U6. Subcommand implementations (list, push, values)
 
 ## Notes
 
 - go.mod exists with module path `github.com/replicatedhq/airgapctl` and Go 1.25.8
-- Stub packages exist at `pkg/bundle/`, `pkg/registry/`, `pkg/values/`, `internal/config/`
-- `cmd/airgapctl/main.go` exists but references non-existent `internal/cli` package
 - Makefile has build, test, lint, coverage targets
 
 ## Completed
@@ -47,3 +45,23 @@
 **Build:** `make build` succeeds.
 
 **Learning documented:** `docs/solutions/design-patterns/safe-tar-extraction-yaml-parsing-airgap-bundles.md`
+
+### U3 — Docker v2 layout traversal and manifest resolution (2026-05-14)
+
+**Files created/modified:**
+- `pkg/distribution/walker.go` — `Walker` traverses `images/` directory and resolves manifest lists vs single-arch manifests
+- `pkg/distribution/walker_test.go` — table-driven tests covering single-arch, multi-arch, multiple repos, missing tags, invalid blobs, and fully-qualified registries
+
+**Tests:** `go test ./pkg/distribution/...` passes.
+**Build:** `make build` succeeds.
+
+### U5 — Chart-structure-preserving values file generation (2026-05-14)
+
+**Files created/modified:**
+- `pkg/values/generator.go` — `Generator` produces YAML values files with configurable path template (`{registry}/{namespace}/{name}:{tag}`)
+- `pkg/values/generator_test.go` — 13 table-driven tests covering happy path, custom templates, tag override, filtering, chart-aware matching, empty image sets, invalid templates, duplicate detection, and helper functions
+
+**Tests:** `go test ./pkg/values/...` passes.
+**Build:** `make build` succeeds.
+
+**Learning documented:** `docs/solutions/design-patterns/template-based-helm-values-generation-airgap-images.md`
