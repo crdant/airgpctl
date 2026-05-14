@@ -10,8 +10,8 @@
 - [x] **U3. Deduplicate image-path helpers into pkg/distribution**
 - [x] **U4. Graceful tar/gzip detection in bundle extraction**
 - [x] **U5. Safer chart directory selection after extraction**
-- [ ] **U6. Improve registry HTTP error classification**
-- [ ] **U7. Add unit-test coverage for new public functions**
+- [x] **U6. Improve registry HTTP error classification**
+- [x] **U7. Add unit-test coverage for new public functions**
 - [ ] **U8. Fix error message capitalization**
 
 ## Previous Plan (Completed)
@@ -190,3 +190,20 @@
 
 **Commits:** `34c1290`, `e3b370c`
 **Learning documented:** `docs/solutions/conventions/registry-http-error-classification-2026-05-14.md`
+
+### U7 — Add unit-test coverage for new public functions (2026-05-14)
+
+**Files created/modified:**
+- `pkg/values/values_test.go` — added `TestRemapChartValues_NestedImageDefinitions`, `TestRemapChartValues_ReleaseImagesArray`, `TestRemapChartValues_NoMatchingImages`
+- `pkg/distribution/distribution_test.go` — added `TestFindRepo_DirectMatch`, `TestFindRepo_Fallback`, `TestFindRepo_NoMatch`, `TestNewWalker_NestedLayout`, `TestNewWalker_NonNestedLayout`
+- `cmd/airgapctl/values_test.go` — added `TestExtractTarball_HappyPath`, `TestWriteValuesYAML_ValidYAML`, `TestWriteValuesYAML_CreatesParentDirs`
+
+**Tests:** `go test ./...` passes.
+**Build:** `go build ./cmd/airgapctl` produces working binary.
+
+**Coverage improvements:**
+- `pkg/values`: 38.4% → 85.7%
+- `pkg/distribution`: 90.9% → 92.7%
+- `cmd/airgapctl`: 73.6% → 76.3%
+
+**Commit:** `210755f`
