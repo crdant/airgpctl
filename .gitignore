@@ -24,6 +24,9 @@ bin/
 dist/
 /airgapctl
 
+# E2E compiled binary
+tests/e2e/airgapctl
+
 # IDE
 .idea/
 .vscode/

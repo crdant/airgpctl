@@ -1,4 +1,4 @@
-.PHONY: all build test clean lint fmt vet coverage install
+.PHONY: all build test e2e clean lint fmt vet coverage install
 
 # Variables
 BINARY_NAME := airgapctl
@@ -16,9 +16,13 @@ build:
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PACKAGE)
 
-# Run tests
+# Run tests (excludes E2E suite)
 test:
-	$(GO) test -v -race ./...
+	$(GO) test -v -race $(shell $(GO) list ./... | grep -v "tests/e2e")
+
+# Run E2E tests
+e2e:
+	$(GO) test -v ./tests/e2e/...
 
 # Run tests with coverage
 coverage:
