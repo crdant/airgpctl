@@ -22,7 +22,7 @@ go.work
 # Build artifacts
 bin/
 dist/
-airgapctl
+/airgapctl
 
 # IDE
 .idea/
