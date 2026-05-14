@@ -256,4 +256,8 @@ func TestDockerConfigFallback(t *testing.T) {
 	if !strings.Contains(out, "Pushing images") {
 		t.Errorf("expected push to proceed to RunE with docker config fallback, got stdout: %s, stderr: %s", out, outErr)
 	}
+	// Verify credentials were actually loaded from docker config
+	if pushOpts.username != "fake" || pushOpts.password != "token" {
+		t.Errorf("expected credentials from docker config (fake:token), got username=%q password=%q", pushOpts.username, pushOpts.password)
+	}
 }

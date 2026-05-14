@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -71,11 +73,16 @@ type dockerConfig struct {
 }
 
 func loadDockerConfig() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
+	var configPath string
+	if envDir := os.Getenv("DOCKER_CONFIG"); envDir != "" {
+		configPath = filepath.Join(envDir, "config.json")
+	} else {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		configPath = filepath.Join(home, ".docker", "config.json")
 	}
-	configPath := filepath.Join(home, ".docker", "config.json")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return err
@@ -84,7 +91,42 @@ func loadDockerConfig() error {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return err
 	}
-	// If we found auths and don't have credentials yet, try to use them.
-	// In the stub we just load the file; full credential matching happens in U4.
+
+	// Look for an auth entry matching the destination registry.
+	// Try exact match first, then strip scheme/port prefixes.
+	registry := pushOpts.registry
+	candidates := []string{registry}
+	if strings.HasPrefix(registry, "https://") {
+		candidates = append(candidates, strings.TrimPrefix(registry, "https://"))
+	} else if strings.HasPrefix(registry, "http://") {
+		candidates = append(candidates, strings.TrimPrefix(registry, "http://"))
+	}
+	if idx := strings.Index(registry, ":"); idx > 0 {
+		candidates = append(candidates, registry[:idx])
+	}
+
+	for _, key := range candidates {
+		auth, ok := cfg.Auths[key]
+		if !ok {
+			continue
+		}
+		if auth.Username != "" && auth.Password != "" {
+			pushOpts.username = auth.Username
+			pushOpts.password = auth.Password
+			return nil
+		}
+		if auth.Auth != "" {
+			decoded, err := base64.StdEncoding.DecodeString(auth.Auth)
+			if err != nil {
+				return fmt.Errorf("invalid base64 auth for %s: %w", key, err)
+			}
+			parts := strings.SplitN(string(decoded), ":", 2)
+			if len(parts) == 2 {
+				pushOpts.username = parts[0]
+				pushOpts.password = parts[1]
+				return nil
+			}
+		}
+	}
 	return nil
 }
