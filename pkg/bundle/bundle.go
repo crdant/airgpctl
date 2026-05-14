@@ -87,7 +87,7 @@ func OpenBundle(path string) (*Bundle, error) {
 	b.bundlePath = path
 
 	if b.Spec.SavedImages == nil {
-		return nil, fmt.Errorf("airgap.yaml missing SavedImages field")
+		return nil, fmt.Errorf("airgap.yaml missing savedImages field")
 	}
 
 	return &b, nil
