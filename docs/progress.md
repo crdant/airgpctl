@@ -6,7 +6,7 @@
 ## Implementation Units
 
 - [x] **U1. Cobra CLI scaffolding and command structure**
-- [ ] U2. Bundle extraction and airgap.yaml parsing
+- [x] **U2. Bundle extraction and airgap.yaml parsing**
 - [ ] U3. Docker v2 layout traversal and manifest resolution
 - [ ] U4. Registry push engine with multi-arch and idempotency
 - [ ] U5. Chart-structure-preserving values file generation
@@ -36,3 +36,14 @@
 **Build:** `go build ./cmd/airgapctl` produces working binary.
 
 **Learning documented:** `docs/solutions/best-practices/cobra-cli-scaffolding.md`
+
+### U2 — Bundle extraction and airgap.yaml parsing (2026-05-14)
+
+**Files created/modified:**
+- `pkg/bundle/bundle.go` — `OpenBundle()` opens `.airgap` tar and parses `airgap.yaml`; `ExtractTo()` safely extracts all bundle contents with directory traversal protection
+- `pkg/bundle/bundle_test.go` — table-driven tests covering happy path, edge cases (empty SavedImages), error paths (missing airgap.yaml, missing SavedImages field, directory traversal), and file-not-found
+
+**Tests:** `go test ./pkg/bundle/...` passes (5 tests).
+**Build:** `make build` succeeds.
+
+**Learning documented:** `docs/solutions/design-patterns/safe-tar-extraction-yaml-parsing-airgap-bundles.md`
