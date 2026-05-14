@@ -432,7 +432,7 @@ func TestPush_DockerConfigParseError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected push command to fail due to malformed docker config, but it succeeded")
 	}
-	if !strings.Contains(err.Error(), "config.json") && !strings.Contains(err.Error(), "invalid") {
-		t.Errorf("expected error to mention docker config parsing, got: %v", err)
+	if !strings.Contains(err.Error(), "parsing docker config") {
+		t.Errorf("expected error to mention 'parsing docker config', got: %v", err)
 	}
 }

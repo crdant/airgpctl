@@ -65,12 +65,19 @@ func NewPusher(cfg Config) *Pusher {
 	}
 
 	// Normalize registry URL: ensure it has a scheme
-	if !strings.HasPrefix(cfg.Registry, "http://") && !strings.HasPrefix(cfg.Registry, "https://") {
-		cfg.Registry = "https://" + cfg.Registry
+	registryURL := cfg.Registry
+	if !strings.HasPrefix(registryURL, "http://") && !strings.HasPrefix(registryURL, "https://") {
+		registryURL = "https://" + registryURL
 	}
 
 	return &Pusher{
-		cfg: cfg,
+		cfg: Config{
+			Registry: registryURL,
+			Username: cfg.Username,
+			Password: cfg.Password,
+			Token:    cfg.Token,
+			Insecure: cfg.Insecure,
+		},
 		client: &http.Client{
 			Transport: transport,
 			Timeout:   defaultPushTimeout,

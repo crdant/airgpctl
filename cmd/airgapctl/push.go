@@ -45,12 +45,12 @@ func newPushCmd() *cobra.Command {
 			if pushOpts.token == "" {
 				pushOpts.token = os.Getenv("AIRGAPCTL_REGISTRY_TOKEN")
 			}
-		if pushOpts.username == "" && pushOpts.token == "" {
-			if err := loadDockerConfig(); err != nil {
-				return err
+			if pushOpts.username == "" && pushOpts.token == "" {
+				if err := loadDockerConfig(); err != nil {
+					return err
+				}
 			}
-		}
-		return nil
+			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			b, err := bundle.OpenBundle(globalOpts.bundle)
@@ -74,28 +74,28 @@ func newPushCmd() *cobra.Command {
 				return fmt.Errorf("resolving images: %w", err)
 			}
 
-		var pushRequests []registry.ImagePush
-		for _, img := range images {
-			// Extract full repository path from the original source ref, stripping the source registry host
-			destRepo := imagePath(img.SourceRef)
-			if pushOpts.namespace != "" {
-				// Prepend namespace while preserving the original image path
-				destRepo = pushOpts.namespace + "/" + destRepo
+			var pushRequests []registry.ImagePush
+			for _, img := range images {
+				// Extract full repository path from the original source ref, stripping the source registry host
+				destRepo := imagePath(img.SourceRef)
+				if pushOpts.namespace != "" {
+					// Prepend namespace while preserving the original image path
+					destRepo = pushOpts.namespace + "/" + destRepo
+				}
+				pushRequests = append(pushRequests, registry.ImagePush{
+					Source:   img,
+					DestRepo: destRepo,
+					Tag:      img.Tag,
+				})
 			}
-			pushRequests = append(pushRequests, registry.ImagePush{
-				Source:   img,
-				DestRepo: destRepo,
-				Tag:      img.Tag,
-			})
-		}
 
-		cfg := registry.Config{
-			Registry: pushOpts.registry,
-			Username: pushOpts.username,
-			Password: pushOpts.password,
-			Token:    pushOpts.token,
-			Insecure: pushOpts.tlsSkipVerify,
-		}
+			cfg := registry.Config{
+				Registry: pushOpts.registry,
+				Username: pushOpts.username,
+				Password: pushOpts.password,
+				Token:    pushOpts.token,
+				Insecure: pushOpts.tlsSkipVerify,
+			}
 			pusher := registry.NewPusher(cfg)
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Pushing %d images to %s\n", len(pushRequests), pushOpts.registry)
@@ -147,6 +147,11 @@ func newPushCmd() *cobra.Command {
 // repository path.
 // e.g. "registry.com/ns/app:1.0" → "ns/app", "library/nginx:latest" → "library/nginx"
 func imagePath(ref string) string {
+	// Strip digest if present (e.g. @sha256:abc123)
+	if idx := strings.LastIndex(ref, "@"); idx != -1 {
+		ref = ref[:idx]
+	}
+
 	// Strip tag if present
 	if idx := strings.LastIndex(ref, ":"); idx > strings.LastIndex(ref, "/") {
 		ref = ref[:idx]
@@ -180,17 +185,17 @@ func loadDockerConfig() error {
 	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return err
+			return fmt.Errorf("loading docker config: resolving home directory: %w", err)
 		}
 		configPath = filepath.Join(home, ".docker", "config.json")
 	}
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("loading docker config %s: %w", configPath, err)
 	}
 	var cfg dockerConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return err
+		return fmt.Errorf("parsing docker config %s: %w", configPath, err)
 	}
 
 	// Look for an auth entry matching the destination registry.
@@ -201,6 +206,9 @@ func loadDockerConfig() error {
 		candidates = append(candidates, strings.TrimPrefix(registry, "https://"))
 	} else if strings.HasPrefix(registry, "http://") {
 		candidates = append(candidates, strings.TrimPrefix(registry, "http://"))
+	} else {
+		// Registry has no scheme; also try common scheme prefixes.
+		candidates = append(candidates, "https://"+registry, "http://"+registry)
 	}
 	if idx := strings.Index(registry, ":"); idx > 0 {
 		candidates = append(candidates, registry[:idx])
@@ -222,11 +230,12 @@ func loadDockerConfig() error {
 				return fmt.Errorf("invalid base64 auth for %s: %w", key, err)
 			}
 			parts := strings.SplitN(string(decoded), ":", 2)
-			if len(parts) == 2 {
-				pushOpts.username = parts[0]
-				pushOpts.password = parts[1]
-				return nil
+			if len(parts) != 2 {
+				return fmt.Errorf("invalid auth format for %s: expected username:password", key)
 			}
+			pushOpts.username = parts[0]
+			pushOpts.password = parts[1]
+			return nil
 		}
 	}
 	return nil
