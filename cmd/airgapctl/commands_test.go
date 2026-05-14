@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -25,13 +26,15 @@ func createMockAirgapBundle(t *testing.T, dir string, images []string, layouts [
 	}
 	defer f.Close()
 
-	w := tar.NewWriter(f)
+	gw := gzip.NewWriter(f)
+	defer gw.Close()
+
+	w := tar.NewWriter(gw)
 	defer w.Close()
 
 	// Write airgap.yaml
-	yamlContent := fmt.Sprintf(`Version: "1"
-Type: "airgap"
-SavedImages:
+	yamlContent := fmt.Sprintf(`spec:
+  savedImages:
 %s
 `, formatSavedImages(images))
 	writeTarFile(t, w, "airgap.yaml", []byte(yamlContent))
@@ -42,7 +45,7 @@ SavedImages:
 	}
 
 	// Write shared blob data for the hardcoded digest used by makeSingleArchManifest
-	blobPath := "blobs/sha256/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/data"
+	blobPath := "images/docker/registry/v2/blobs/sha256/e3/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/data"
 	writeTarFile(t, w, blobPath, makeBlobData())
 
 	return bundlePath
@@ -82,15 +85,19 @@ func writeDistributionLayout(t *testing.T, w *tar.Writer, layout mockImageLayout
 	t.Helper()
 
 	// Manifest revision link
-	revPath := fmt.Sprintf("images/%s/_manifests/revisions/sha256/%s/link", layout.repo, layout.manifestDigest)
+	revPath := fmt.Sprintf("images/docker/registry/v2/repositories/%s/_manifests/revisions/sha256/%s/link", layout.repo, layout.manifestDigest)
 	writeTarFile(t, w, revPath, []byte("sha256:"+layout.manifestDigest))
 
 	// Tag current link
-	tagPath := fmt.Sprintf("images/%s/_manifests/tags/%s/current/link", layout.repo, layout.tag)
+	tagPath := fmt.Sprintf("images/docker/registry/v2/repositories/%s/_manifests/tags/%s/current/link", layout.repo, layout.tag)
 	writeTarFile(t, w, tagPath, []byte("sha256:"+layout.manifestDigest))
 
-	// Blob data
-	blobPath := fmt.Sprintf("blobs/sha256/%s/data", layout.manifestDigest)
+	// Blob data with two-char prefix
+	prefix := ""
+	if len(layout.manifestDigest) >= 2 {
+		prefix = layout.manifestDigest[:2]
+	}
+	blobPath := fmt.Sprintf("images/docker/registry/v2/blobs/sha256/%s/%s/data", prefix, layout.manifestDigest)
 	writeTarFile(t, w, blobPath, layout.manifestJSON)
 }
 
@@ -224,9 +231,11 @@ func TestValuesCommand(t *testing.T) {
 	if err := os.MkdirAll(chartDir, 0755); err != nil {
 		t.Fatalf("creating chart dir: %v", err)
 	}
-	chartValues := `image:
-  repository: nginx
-  tag: latest
+	chartValues := `images:
+  nginx:
+    registry: docker.io
+    repository: library/nginx
+    tag: latest
 `
 	if err := os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte(chartValues), 0644); err != nil {
 		t.Fatalf("writing chart values.yaml: %v", err)
@@ -321,5 +330,109 @@ func TestPushCommand(t *testing.T) {
 	}
 	if !strings.Contains(output, "1 pushed") {
 		t.Errorf("expected output to show pushed count, got:\n%s", output)
+	}
+}
+
+func TestPushCommand_Token(t *testing.T) {
+	// Create a mock registry server that requires bearer token auth
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify bearer token is present
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="test"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/"):
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/blobs/uploads/"):
+			w.Header().Set("Location", "/upload")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/upload"):
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/"):
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/manifests/"):
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	manifestJSON := makeSingleArchManifest(t)
+	bundlePath := createMockAirgapBundle(t, tmpDir, []string{"nginx:latest"}, []mockImageLayout{
+		{repo: "library/nginx", tag: "latest", manifestDigest: "nginx123", manifestJSON: manifestJSON},
+	})
+
+	root := newRootCmd()
+	root.SetArgs([]string{
+		"push",
+		"--bundle", bundlePath,
+		"--registry", server.URL,
+		"--token", "testtoken",
+		"--tls-skip-verify",
+	})
+
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("push command with token failed: %v\noutput: %s", err, out.String())
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "Pushing") {
+		t.Errorf("expected output to contain 'Pushing', got:\n%s", output)
+	}
+	if !strings.Contains(output, "1 pushed") {
+		t.Errorf("expected output to show pushed count, got:\n%s", output)
+	}
+}
+
+func TestPush_DockerConfigParseError(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestJSON := makeSingleArchManifest(t)
+	bundlePath := createMockAirgapBundle(t, tmpDir, []string{"nginx:latest"}, []mockImageLayout{
+		{repo: "library/nginx", tag: "latest", manifestDigest: "nginx123", manifestJSON: manifestJSON},
+	})
+
+	// Create a malformed docker config file
+	dockerConfigDir := filepath.Join(tmpDir, "docker-config")
+	if err := os.MkdirAll(dockerConfigDir, 0755); err != nil {
+		t.Fatalf("creating docker config dir: %v", err)
+	}
+	malformedConfig := `this is not valid json{`
+	if err := os.WriteFile(filepath.Join(dockerConfigDir, "config.json"), []byte(malformedConfig), 0644); err != nil {
+		t.Fatalf("writing malformed docker config: %v", err)
+	}
+
+	// Set DOCKER_CONFIG env var (and restore after test)
+	origDockerConfig := os.Getenv("DOCKER_CONFIG")
+	os.Setenv("DOCKER_CONFIG", dockerConfigDir)
+	defer os.Setenv("DOCKER_CONFIG", origDockerConfig)
+
+	// Create a dummy registry URL (won't be reached because PreRunE should fail)
+	root := newRootCmd()
+	root.SetArgs([]string{
+		"push",
+		"--bundle", bundlePath,
+		"--registry", "http://localhost:9999",
+	})
+
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected push command to fail due to malformed docker config, but it succeeded")
+	}
+	if !strings.Contains(err.Error(), "config.json") && !strings.Contains(err.Error(), "invalid") {
+		t.Errorf("expected error to mention docker config parsing, got: %v", err)
 	}
 }

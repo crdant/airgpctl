@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -36,7 +37,11 @@ func newMockRegistry(t *testing.T) *mockRegistry {
 	// Blob checks
 	mux.HandleFunc("/v2/", func(w http.ResponseWriter, r *http.Request) {
 		mr.mu.Lock()
-		mr.requests = append(mr.requests, r.Method+" "+r.URL.Path)
+		reqLog := r.Method + " " + r.URL.Path
+		if auth := r.Header.Get("Authorization"); auth != "" {
+			reqLog += " Authorization:" + auth
+		}
+		mr.requests = append(mr.requests, reqLog)
 		mr.mu.Unlock()
 
 		if mr.tokenAuth && r.Header.Get("Authorization") == "" {
@@ -521,6 +526,67 @@ func TestPusher_Push_Auth(t *testing.T) {
 	}
 }
 
+func TestPusher_Push_TokenAuth(t *testing.T) {
+	mr := newMockRegistry(t)
+	mr.tokenAuth = true
+
+	tmpDir := t.TempDir()
+	manifestDigest := "tokenauth123"
+	manifestJSON := []byte(`{
+		"schemaVersion": 2,
+		"mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+		"config": {
+			"mediaType": "application/vnd.docker.container.image.v1+json",
+			"size": 7023,
+			"digest": "sha256:configdigest"
+		},
+		"layers": []
+	}`)
+	createMockBlob(t, tmpDir, manifestDigest, manifestJSON)
+	createMockBlob(t, tmpDir, "configdigest", []byte("config data"))
+
+	walker := distribution.NewWalker(tmpDir)
+	img := distribution.Image{
+		SourceRef:   "nginx:latest",
+		Repository:  "library/nginx",
+		Tag:         "latest",
+		Digest:      "sha256:" + manifestDigest,
+		IsMultiArch: false,
+	}
+
+	p := NewPusher(Config{
+		Registry: mr.server.URL,
+		Token:    "test-token",
+	})
+
+	reqs := []ImagePush{
+		{Source: img, DestRepo: "prod/nginx", Tag: "latest"},
+	}
+
+	reports := p.Push(context.Background(), reqs, walker, nil)
+
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 report, got %d", len(reports))
+	}
+	if !reports[0].Success {
+		t.Fatalf("expected success with token auth, got error: %v", reports[0].Error)
+	}
+
+	// Verify that at least one request contained the Bearer token
+	mr.mu.Lock()
+	foundBearer := false
+	for _, req := range mr.requests {
+		if strings.Contains(req, "Bearer test-token") {
+			foundBearer = true
+			break
+		}
+	}
+	mr.mu.Unlock()
+	if !foundBearer {
+		t.Error("expected at least one request with Bearer token")
+	}
+}
+
 func TestPusher_Push_PartialFailure(t *testing.T) {
 	// Create a registry that rejects one specific blob
 	mr := &mockRegistry{
@@ -623,14 +689,18 @@ func TestPusher_Push_PartialFailure(t *testing.T) {
 	}
 }
 
-// createMockBlob creates a blob in the tmpDir's blobs/sha256/<digest>/data path.
+// createMockBlob creates a blob in the tmpDir's blobs/sha256/<prefix>/<digest>/data path.
 func createMockBlob(t *testing.T, dir, digest string, data []byte) {
 	t.Helper()
-	blobDir := dir + "/blobs/sha256/" + digest
+	prefix := ""
+	if len(digest) >= 2 {
+		prefix = digest[:2]
+	}
+	blobDir := filepath.Join(dir, "blobs", "sha256", prefix, digest)
 	if err := os.MkdirAll(blobDir, 0755); err != nil {
 		t.Fatalf("creating blob dir: %v", err)
 	}
-	if err := os.WriteFile(blobDir+"/data", data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(blobDir, "data"), data, 0644); err != nil {
 		t.Fatalf("writing blob data: %v", err)
 	}
 }

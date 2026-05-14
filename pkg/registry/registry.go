@@ -21,6 +21,7 @@ type Config struct {
 	Registry string // Host (and optional port) of the destination registry
 	Username string // Basic auth username (empty for anonymous)
 	Password string // Basic auth password or token
+	Token    string // Bearer token for registry authentication
 	Insecure bool   // Skip TLS certificate verification
 	// TODO: CustomCA []byte // PEM-encoded CA certificate for private registries (R2)
 }
@@ -62,6 +63,12 @@ func NewPusher(cfg Config) *Pusher {
 	if cfg.Insecure {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
+
+	// Normalize registry URL: ensure it has a scheme
+	if !strings.HasPrefix(cfg.Registry, "http://") && !strings.HasPrefix(cfg.Registry, "https://") {
+		cfg.Registry = "https://" + cfg.Registry
+	}
+
 	return &Pusher{
 		cfg: cfg,
 		client: &http.Client{
@@ -329,6 +336,10 @@ func manifestMediaType(data []byte) string {
 }
 
 func (p *Pusher) setAuth(req *http.Request) {
+	if p.cfg.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.cfg.Token)
+		return
+	}
 	if p.cfg.Username != "" || p.cfg.Password != "" {
 		req.SetBasicAuth(p.cfg.Username, p.cfg.Password)
 	}

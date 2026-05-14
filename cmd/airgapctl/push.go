@@ -18,6 +18,7 @@ import (
 
 var pushOpts struct {
 	registry      string
+	namespace     string
 	username      string
 	password      string
 	token         string
@@ -44,10 +45,12 @@ func newPushCmd() *cobra.Command {
 			if pushOpts.token == "" {
 				pushOpts.token = os.Getenv("AIRGAPCTL_REGISTRY_TOKEN")
 			}
-			if pushOpts.username == "" && pushOpts.token == "" {
-				_ = loadDockerConfig()
+		if pushOpts.username == "" && pushOpts.token == "" {
+			if err := loadDockerConfig(); err != nil {
+				return err
 			}
-			return nil
+		}
+		return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			b, err := bundle.OpenBundle(globalOpts.bundle)
@@ -66,26 +69,33 @@ func newPushCmd() *cobra.Command {
 			}
 
 			walker := distribution.NewWalker(extractDir)
-			images, err := walker.ResolveImages(b.SavedImages)
+			images, err := walker.ResolveImages(b.Spec.SavedImages)
 			if err != nil {
 				return fmt.Errorf("resolving images: %w", err)
 			}
 
-			var pushRequests []registry.ImagePush
-			for _, img := range images {
-				pushRequests = append(pushRequests, registry.ImagePush{
-					Source:   img,
-					DestRepo: img.Repository,
-					Tag:      img.Tag,
-				})
+		var pushRequests []registry.ImagePush
+		for _, img := range images {
+			// Extract full repository path from the original source ref, stripping the source registry host
+			destRepo := imagePath(img.SourceRef)
+			if pushOpts.namespace != "" {
+				// Prepend namespace while preserving the original image path
+				destRepo = pushOpts.namespace + "/" + destRepo
 			}
+			pushRequests = append(pushRequests, registry.ImagePush{
+				Source:   img,
+				DestRepo: destRepo,
+				Tag:      img.Tag,
+			})
+		}
 
-			cfg := registry.Config{
-				Registry: pushOpts.registry,
-				Username: pushOpts.username,
-				Password: pushOpts.password,
-				Insecure: pushOpts.tlsSkipVerify,
-			}
+		cfg := registry.Config{
+			Registry: pushOpts.registry,
+			Username: pushOpts.username,
+			Password: pushOpts.password,
+			Token:    pushOpts.token,
+			Insecure: pushOpts.tlsSkipVerify,
+		}
 			pusher := registry.NewPusher(cfg)
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Pushing %d images to %s\n", len(pushRequests), pushOpts.registry)
@@ -120,6 +130,7 @@ func newPushCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&pushOpts.registry, "registry", "", "destination registry URL (required)")
+	cmd.Flags().StringVar(&pushOpts.namespace, "namespace", "", "destination namespace/prefix for image repositories")
 	cmd.Flags().StringVar(&pushOpts.username, "username", "", "registry username")
 	cmd.Flags().StringVar(&pushOpts.password, "password", "", "registry password")
 	cmd.Flags().StringVar(&pushOpts.token, "token", "", "registry bearer token")
@@ -129,6 +140,28 @@ func newPushCmd() *cobra.Command {
 	_ = cmd.MarkFlagRequired("registry")
 
 	return cmd
+}
+
+// imagePath extracts the repository path after the source registry host from a
+// full image reference. If no registry host is detected, it returns the entire
+// repository path.
+// e.g. "registry.com/ns/app:1.0" → "ns/app", "library/nginx:latest" → "library/nginx"
+func imagePath(ref string) string {
+	// Strip tag if present
+	if idx := strings.LastIndex(ref, ":"); idx > strings.LastIndex(ref, "/") {
+		ref = ref[:idx]
+	}
+
+	parts := strings.SplitN(ref, "/", 2)
+	if len(parts) == 1 {
+		return ref
+	}
+
+	// If the first component contains a dot or colon, it's a registry host
+	if strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") {
+		return parts[1]
+	}
+	return ref
 }
 
 // dockerConfig mirrors the minimal structure of ~/.docker/config.json we need.
