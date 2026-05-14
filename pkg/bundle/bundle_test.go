@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func createMockAirgapBundle(t *testing.T, dir string, airgapYamlContent string) string {
+func createMockBundle(t *testing.T, dir string, airgapYamlContent string, gzipped bool) string {
 	t.Helper()
 	bundlePath := filepath.Join(dir, "test.airgap")
 	f, err := os.Create(bundlePath)
@@ -17,37 +17,14 @@ func createMockAirgapBundle(t *testing.T, dir string, airgapYamlContent string) 
 	}
 	defer f.Close()
 
-	gw := gzip.NewWriter(f)
-	defer gw.Close()
-
-	w := tar.NewWriter(gw)
-	defer w.Close()
-
-	header := &tar.Header{
-		Name: "airgap.yaml",
-		Size: int64(len(airgapYamlContent)),
-		Mode: 0644,
+	var w *tar.Writer
+	if gzipped {
+		gw := gzip.NewWriter(f)
+		defer gw.Close()
+		w = tar.NewWriter(gw)
+	} else {
+		w = tar.NewWriter(f)
 	}
-	if err := w.WriteHeader(header); err != nil {
-		t.Fatalf("writing tar header: %v", err)
-	}
-	if _, err := w.Write([]byte(airgapYamlContent)); err != nil {
-		t.Fatalf("writing tar content: %v", err)
-	}
-
-	return bundlePath
-}
-
-func createPlainTarBundle(t *testing.T, dir string, airgapYamlContent string) string {
-	t.Helper()
-	bundlePath := filepath.Join(dir, "test.airgap")
-	f, err := os.Create(bundlePath)
-	if err != nil {
-		t.Fatalf("creating mock bundle: %v", err)
-	}
-	defer f.Close()
-
-	w := tar.NewWriter(f)
 	defer w.Close()
 
 	header := &tar.Header{
@@ -105,8 +82,8 @@ func TestOpenBundle(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name:     "missing airgap.yaml in bundle",
-			content:  "", // Will create empty tar
+			name:       "missing airgap.yaml in bundle",
+			content:    "", // Will create empty tar
 			wantImages: nil,
 			wantErr:    true,
 		},
@@ -137,7 +114,7 @@ func TestOpenBundle(t *testing.T) {
 				gw.Close()
 				f.Close()
 			} else {
-				bundlePath = createMockAirgapBundle(t, tmpDir, tt.content)
+				bundlePath = createMockBundle(t, tmpDir, tt.content, true)
 			}
 
 			b, err := OpenBundle(bundlePath)
@@ -174,7 +151,7 @@ func TestBundle_ExtractTo(t *testing.T) {
     - "nginx:latest"
 `
 	tmpDir := t.TempDir()
-	bundlePath := createMockAirgapBundle(t, tmpDir, content)
+	bundlePath := createMockBundle(t, tmpDir, content, true)
 
 	b, err := OpenBundle(bundlePath)
 	if err != nil {
@@ -205,7 +182,7 @@ func TestBundle_ExtractTo(t *testing.T) {
 func TestBundle_ExtractTo_DirectoryTraversal(t *testing.T) {
 	tmpDir := t.TempDir()
 	bundlePath := filepath.Join(tmpDir, "evil.airgap")
-		f, err := os.Create(bundlePath)
+	f, err := os.Create(bundlePath)
 	if err != nil {
 		t.Fatalf("creating evil bundle: %v", err)
 	}
@@ -251,7 +228,7 @@ func TestOpenBundle_PlainTar(t *testing.T) {
     - "nginx:latest"
 `
 	tmpDir := t.TempDir()
-	bundlePath := createPlainTarBundle(t, tmpDir, content)
+	bundlePath := createMockBundle(t, tmpDir, content, false)
 
 	b, err := OpenBundle(bundlePath)
 	if err != nil {
@@ -269,7 +246,7 @@ func TestBundle_ExtractTo_PlainTar(t *testing.T) {
     - "nginx:latest"
 `
 	tmpDir := t.TempDir()
-	bundlePath := createPlainTarBundle(t, tmpDir, content)
+	bundlePath := createMockBundle(t, tmpDir, content, false)
 
 	b, err := OpenBundle(bundlePath)
 	if err != nil {
@@ -301,7 +278,7 @@ func TestOpenBundle_GzippedTar(t *testing.T) {
     - "postgres:14"
 `
 	tmpDir := t.TempDir()
-	bundlePath := createMockAirgapBundle(t, tmpDir, content)
+	bundlePath := createMockBundle(t, tmpDir, content, true)
 
 	b, err := OpenBundle(bundlePath)
 	if err != nil {
@@ -310,5 +287,18 @@ func TestOpenBundle_GzippedTar(t *testing.T) {
 
 	if len(b.Spec.SavedImages) != 1 || b.Spec.SavedImages[0] != "postgres:14" {
 		t.Errorf("unexpected images: %v", b.Spec.SavedImages)
+	}
+}
+
+func TestOpenBundle_EmptyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	bundlePath := filepath.Join(tmpDir, "empty.airgap")
+	if err := os.WriteFile(bundlePath, []byte{}, 0644); err != nil {
+		t.Fatalf("creating empty file: %v", err)
+	}
+
+	_, err := OpenBundle(bundlePath)
+	if err == nil {
+		t.Fatal("expected error for empty file, got nil")
 	}
 }

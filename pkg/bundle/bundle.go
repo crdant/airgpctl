@@ -22,27 +22,41 @@ type Bundle struct {
 	bundlePath string
 }
 
-// OpenBundle opens a .airgap file, extracts and parses airgap.yaml, and returns a Bundle.
-func OpenBundle(path string) (*Bundle, error) {
+// openBundleFile opens the bundle at path, detects whether it is gzip-compressed,
+// and returns the underlying file, an optional gzip.Reader, and a tar.Reader.
+// The caller is responsible for closing the file and the gzip.Reader.
+func openBundleFile(path string) (*os.File, *gzip.Reader, *tar.Reader, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("opening bundle: %w", err)
+		return nil, nil, nil, fmt.Errorf("opening bundle: %w", err)
 	}
-	defer f.Close()
 
-	var tr *tar.Reader
 	gr, err := gzip.NewReader(f)
 	if err == gzip.ErrHeader {
 		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			return nil, fmt.Errorf("seeking bundle file: %w", err)
+			f.Close()
+			return nil, nil, nil, fmt.Errorf("seeking bundle file: %w", err)
 		}
-		tr = tar.NewReader(f)
+		return f, nil, tar.NewReader(f), nil
 	} else if err != nil {
-		return nil, fmt.Errorf("decompressing bundle: %w", err)
-	} else {
-		defer gr.Close()
-		tr = tar.NewReader(gr)
+		f.Close()
+		return nil, nil, nil, fmt.Errorf("decompressing bundle: %w", err)
 	}
+
+	return f, gr, tar.NewReader(gr), nil
+}
+
+// OpenBundle opens a .airgap file, extracts and parses airgap.yaml, and returns a Bundle.
+func OpenBundle(path string) (*Bundle, error) {
+	f, gr, tr, err := openBundleFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if gr != nil {
+		defer gr.Close()
+	}
+
 	var airgapYamlData []byte
 	for {
 		header, err := tr.Next()
@@ -85,25 +99,15 @@ func (b *Bundle) ExtractTo(dest string) error {
 		return fmt.Errorf("creating extraction directory: %w", err)
 	}
 
-	f, err := os.Open(b.bundlePath)
+	f, gr, tr, err := openBundleFile(b.bundlePath)
 	if err != nil {
-		return fmt.Errorf("opening bundle: %w", err)
+		return err
 	}
 	defer f.Close()
-
-	var tr *tar.Reader
-	gr, err := gzip.NewReader(f)
-	if err == gzip.ErrHeader {
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			return fmt.Errorf("seeking bundle file: %w", err)
-		}
-		tr = tar.NewReader(f)
-	} else if err != nil {
-		return fmt.Errorf("decompressing bundle: %w", err)
-	} else {
+	if gr != nil {
 		defer gr.Close()
-		tr = tar.NewReader(gr)
 	}
+
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
