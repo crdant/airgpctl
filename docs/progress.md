@@ -176,4 +176,5 @@
 **Tests:** `go test ./cmd/airgapctl/...` passes (36 tests).
 **Build:** `go build ./cmd/airgapctl` produces working binary.
 
-**Commits:** `701f38a`
+**Commits:** `701f38a`, `73311cc`
+**Learning documented:** `docs/solutions/best-practices/safer-chart-directory-selection-after-extraction.md`
