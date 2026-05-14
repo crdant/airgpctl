@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -48,6 +49,7 @@ func TestOpenBundle(t *testing.T) {
 		content    string
 		wantImages []string
 		wantErr    bool
+		wantErrMsg string
 	}{
 		{
 			name: "valid bundle with multiple images",
@@ -88,12 +90,13 @@ func TestOpenBundle(t *testing.T) {
 			wantErr:    true,
 		},
 		{
-			name: "missing SavedImages field",
-			content: `spec:
+			name:       "missing savedImages field",
+			content:    `spec:
   otherField: "value"
 `,
 			wantImages: nil,
 			wantErr:    true,
+			wantErrMsg: "savedImages",
 		},
 	}
 
@@ -122,6 +125,9 @@ func TestOpenBundle(t *testing.T) {
 				t.Fatalf("OpenBundle() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if tt.wantErr {
+				if tt.wantErrMsg != "" && !strings.Contains(err.Error(), tt.wantErrMsg) {
+					t.Errorf("OpenBundle() error = %v, want error containing %q", err, tt.wantErrMsg)
+				}
 				return
 			}
 
