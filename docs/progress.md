@@ -9,7 +9,7 @@
 - [x] **U2. Harden chart image reference extraction**
 - [x] **U3. Deduplicate image-path helpers into pkg/distribution**
 - [x] **U4. Graceful tar/gzip detection in bundle extraction**
-- [ ] **U5. Safer chart directory selection after extraction**
+- [x] **U5. Safer chart directory selection after extraction**
 - [ ] **U6. Improve registry HTTP error classification**
 - [ ] **U7. Add unit-test coverage for new public functions**
 - [ ] **U8. Fix error message capitalization**
@@ -166,3 +166,14 @@
 
 **Commits:** `d241cb9`, `cad17bf`
 **Learning documented:** `docs/solutions/best-practices/dry-gzip-tar-detection-test-helpers-edge-cases-2026-05-14.md`
+
+### U5 — Safer chart directory selection after extraction (2026-05-14)
+
+**Files created/modified:**
+- `cmd/airgapctl/values.go` — extracted duplicate "find first directory" logic into `findChartDir(root, expectedName)` helper; added `chartNameFromTarball(path)` for deriving expected name from tarball filename; updated OCI and tarball extraction call sites to use `findChartDir`
+- `cmd/airgapctl/values_test.go` — added `TestFindChartDir_Match`, `TestFindChartDir_Fallback`, `TestFindChartDir_SingleDir`
+
+**Tests:** `go test ./cmd/airgapctl/...` passes (36 tests).
+**Build:** `go build ./cmd/airgapctl` produces working binary.
+
+**Commits:** `701f38a`
