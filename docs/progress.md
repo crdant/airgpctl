@@ -178,3 +178,15 @@
 
 **Commits:** `701f38a`, `73311cc`
 **Learning documented:** `docs/solutions/best-practices/safer-chart-directory-selection-after-extraction.md`
+
+### U6 — Improve registry HTTP error classification (2026-05-14)
+
+**Files created/modified:**
+- `pkg/registry/registry.go` — extracted `registryError(statusCode, url)` helper; classified auth failures (401/403), retriable errors (500/502/503/504), and unexpected statuses; applied classification consistently across `manifestExists`, `pushBlob` (HEAD, POST, PUT), and `pushManifest` (PUT)
+- `pkg/registry/registry_test.go` — added `TestPusher_Push_AuthFailure`, `TestPusher_Push_RetriableFailure`, `TestPusher_Push_UnexpectedStatus`, `TestPusher_Push_ManifestAuthFailure`, `TestPusher_Push_ManifestRetriableFailure`, `TestPusher_Push_BlobUploadAuthFailure`
+
+**Tests:** `go test ./pkg/registry/...` passes.
+**Build:** `go build ./cmd/airgapctl` produces working binary.
+
+**Commits:** `34c1290`, `e3b370c`
+**Learning documented:** `docs/solutions/conventions/registry-http-error-classification-2026-05-14.md`
