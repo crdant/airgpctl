@@ -8,7 +8,7 @@
 - [x] **U1. Wire bearer-token auth and surface docker-config errors**
 - [x] **U2. Harden chart image reference extraction**
 - [x] **U3. Deduplicate image-path helpers into pkg/distribution**
-- [ ] **U4. Graceful tar/gzip detection in bundle extraction**
+- [x] **U4. Graceful tar/gzip detection in bundle extraction**
 - [ ] **U5. Safer chart directory selection after extraction**
 - [ ] **U6. Improve registry HTTP error classification**
 - [ ] **U7. Add unit-test coverage for new public functions**
@@ -154,3 +154,15 @@
 
 **Commits:** `d429462`, `497005c`
 **Learning documented:** `docs/solutions/best-practices/image-reference-parsing-testing-conventions-2026-05-14.md`
+
+### U4 — Graceful tar/gzip detection in bundle extraction (2026-05-14)
+
+**Files created/modified:**
+- `pkg/bundle/bundle.go` — `OpenBundle` and `ExtractTo` now autodetect gzip compression via shared `openBundleFile` helper; falls back to plain tar when `gzip.ErrHeader` is returned
+- `pkg/bundle/bundle_test.go` — added `TestOpenBundle_PlainTar`, `TestBundle_ExtractTo_PlainTar`, `TestOpenBundle_GzippedTar` (regression), `TestOpenBundle_EmptyFile`; merged `createMockAirgapBundle` and `createPlainTarBundle` into single `createMockBundle` helper
+
+**Tests:** `go test ./pkg/bundle/...` passes (11 tests).
+**Build:** `go build ./cmd/airgapctl` produces working binary.
+
+**Commits:** `d241cb9`, `cad17bf`
+**Learning documented:** `docs/solutions/best-practices/dry-gzip-tar-detection-test-helpers-edge-cases-2026-05-14.md`
