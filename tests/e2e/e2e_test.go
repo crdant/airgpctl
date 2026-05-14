@@ -1,10 +1,13 @@
 package e2e_test
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 var airgapctlBin string
@@ -13,6 +16,7 @@ func TestMain(m *testing.M) {
 	// go test runs with the package directory as the working directory.
 	// From tests/e2e/, the repo root is ../.. and the binary should be
 	// produced inside this directory.
+	_ = os.Remove("airgapctl")
 	build := exec.Command("go", "build", "-o", "airgapctl", "../../cmd/airgapctl")
 	build.Stdout = os.Stdout
 	build.Stderr = os.Stderr
@@ -21,14 +25,20 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	airgapctlBin = "./airgapctl"
-	os.Exit(m.Run())
+	code := m.Run()
+	_ = os.Remove("airgapctl")
+	os.Exit(code)
 }
 
 // runAirgapctl executes the compiled airgapctl binary with the given args and
 // returns stdout, stderr, and the exit code. Output is logged via t.Log.
 func runAirgapctl(t *testing.T, args ...string) (stdout, stderr string, exitCode int) {
 	t.Helper()
-	cmd := exec.Command(airgapctlBin, args...)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, airgapctlBin, args...)
 	outBuf := new(strings.Builder)
 	errBuf := new(strings.Builder)
 	cmd.Stdout = outBuf
@@ -36,7 +46,8 @@ func runAirgapctl(t *testing.T, args ...string) (stdout, stderr string, exitCode
 
 	err := cmd.Run()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
 			exitCode = -1
@@ -56,13 +67,31 @@ func runAirgapctl(t *testing.T, args ...string) (stdout, stderr string, exitCode
 	return stdout, stderr, exitCode
 }
 
-// fixturePath returns the value of the given environment variable, or defaultPath
-// if the variable is not set.
+// fixturePath reads an environment variable and falls back to defaultPath when
+// the variable is unset or empty. It is used to resolve external fixture paths
+// (e.g. bundle files, chart tarballs) so the suite can run in CI or other
+// environments without code changes.
 func fixturePath(envVar, defaultPath string) string {
 	if v := os.Getenv(envVar); v != "" {
 		return v
 	}
 	return defaultPath
+}
+
+func TestFixturePath_Default(t *testing.T) {
+	os.Unsetenv("AIRGAPCTL_E2E_TEST_DEFAULT")
+	got := fixturePath("AIRGAPCTL_E2E_TEST_DEFAULT", "/default/path")
+	if got != "/default/path" {
+		t.Errorf("expected default path, got %q", got)
+	}
+}
+
+func TestFixturePath_EnvOverride(t *testing.T) {
+	t.Setenv("AIRGAPCTL_E2E_TEST_OVERRIDE", "/override/path")
+	got := fixturePath("AIRGAPCTL_E2E_TEST_OVERRIDE", "/default/path")
+	if got != "/override/path" {
+		t.Errorf("expected env override path, got %q", got)
+	}
 }
 
 func TestE2E_Help(t *testing.T) {

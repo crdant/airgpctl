@@ -1,9 +1,19 @@
 # airgapctl Implementation Progress
 
 ## Active Plan
+[docs/plans/2026-05-14-003-feat-e2e-test-suite-real-fixtures-plan.md](docs/plans/2026-05-14-003-feat-e2e-test-suite-real-fixtures-plan.md)
+
+## Implementation Units (E2E Test Suite)
+
+- [x] **U1. E2E Test Harness and Binary Builder**
+- [ ] **U2. List Command E2E Test with Real Bundle**
+- [ ] **U3. Values Command E2E Test with Real Bundle and Chart**
+- [ ] **U4. Push Command E2E Test with Real Bundle and Mock Registry**
+
+## Previous Plan (Completed)
 [docs/plans/2026-05-14-002-fix-review-findings-plan.md](docs/plans/2026-05-14-002-fix-review-findings-plan.md)
 
-## Implementation Units (Review Findings Fixes)
+### Review Findings Fixes (Completed)
 
 - [x] **U1. Wire bearer-token auth and surface docker-config errors**
 - [x] **U2. Harden chart image reference extraction**
@@ -30,6 +40,18 @@
 - Makefile has build, test, lint, coverage targets
 
 ## Completed
+
+### U1 — E2E Test Harness and Binary Builder (2026-05-14)
+
+**Files created/modified:**
+- `tests/e2e/e2e_test.go` — `TestMain` builds `./airgapctl` binary via `go build`; `runAirgapctl` helper executes compiled binary via `os/exec` with `t.Log` output capture; `fixturePath` helper resolves env-var-overridable fixture paths
+- `Makefile` — `make e2e` target runs `go test -v ./tests/e2e/...`; default `make test` excludes `tests/e2e`
+- `.gitignore` — `tests/e2e/airgapctl` added to ignore compiled E2E binary
+
+**Tests:** `make e2e` passes (4 tests: `TestFixturePath_Default`, `TestFixturePath_EnvOverride`, `TestE2E_Help`, `TestE2E_InvalidFlag`).
+**Build:** `go build ./cmd/airgapctl` produces working binary.
+
+### U1 — Cobra CLI scaffolding (2026-05-14)
 
 ### U1 — Cobra CLI scaffolding (2026-05-14)
 

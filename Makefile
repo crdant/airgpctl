@@ -1,4 +1,4 @@
-.PHONY: all build test e2e clean lint fmt vet coverage install
+.PHONY: all build test e2e clean lint fmt vet coverage install tidy deps
 
 # Variables
 BINARY_NAME := airgapctl
