@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -430,6 +431,9 @@ func TestFindRepo_NoMatch(t *testing.T) {
 	_, err := w.findRepo("nginx:latest")
 	if err == nil {
 		t.Fatal("expected error for no matching repository, got nil")
+	}
+	if !strings.Contains(err.Error(), "no on-disk repository found") {
+		t.Errorf("expected error to contain 'no on-disk repository found', got %v", err)
 	}
 }
 

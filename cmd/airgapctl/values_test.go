@@ -295,24 +295,36 @@ func TestExtractTarball_HappyPath(t *testing.T) {
 	tw := tar.NewWriter(gw)
 
 	// Add a directory
-	_ = tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name:     "subdir/",
 		Typeflag: tar.TypeDir,
 		Mode:     0755,
-	})
+	}); err != nil {
+		t.Fatalf("writing tar dir header: %v", err)
+	}
 
 	// Add a file
 	content := []byte("hello world")
-	_ = tw.WriteHeader(&tar.Header{
+	if err := tw.WriteHeader(&tar.Header{
 		Name: "subdir/file.txt",
 		Size: int64(len(content)),
 		Mode: 0644,
-	})
-	_, _ = tw.Write(content)
+	}); err != nil {
+		t.Fatalf("writing tar file header: %v", err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatalf("writing tar file content: %v", err)
+	}
 
-	_ = tw.Close()
-	_ = gw.Close()
-	_ = os.WriteFile(tarPath, buf.Bytes(), 0644)
+	if err := tw.Close(); err != nil {
+		t.Fatalf("closing tar writer: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("closing gzip writer: %v", err)
+	}
+	if err := os.WriteFile(tarPath, buf.Bytes(), 0644); err != nil {
+		t.Fatalf("writing tar file: %v", err)
+	}
 
 	dst := filepath.Join(tmpDir, "extract")
 	if err := extractTarball(tarPath, dst); err != nil {
@@ -325,6 +337,26 @@ func TestExtractTarball_HappyPath(t *testing.T) {
 	}
 	if string(data) != "hello world" {
 		t.Errorf("extracted content = %q, want %q", string(data), "hello world")
+	}
+}
+
+func TestExtractTarball_NonExistentFile(t *testing.T) {
+	dst := t.TempDir()
+	if err := extractTarball("/nonexistent/path/to/file.tgz", dst); err == nil {
+		t.Fatal("expected error for non-existent file, got nil")
+	}
+}
+
+func TestExtractTarball_InvalidGzip(t *testing.T) {
+	tmpDir := t.TempDir()
+	tarPath := filepath.Join(tmpDir, "invalid.tgz")
+	if err := os.WriteFile(tarPath, []byte("not valid gzip data"), 0644); err != nil {
+		t.Fatalf("writing invalid gzip file: %v", err)
+	}
+
+	dst := filepath.Join(tmpDir, "extract")
+	if err := extractTarball(tarPath, dst); err == nil {
+		t.Fatal("expected error for invalid gzip data, got nil")
 	}
 }
 
@@ -367,6 +399,18 @@ func TestWriteValuesYAML_ValidYAML(t *testing.T) {
 	}
 	if img["tag"] != "1.0" {
 		t.Errorf("tag = %v, want 1.0", img["tag"])
+	}
+}
+
+func TestWriteValuesYAML_UnmarshalableValue(t *testing.T) {
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "values.yaml")
+	values := map[string]interface{}{
+		"bad": make(chan int),
+	}
+
+	if err := writeValuesYAML(values, outPath); err == nil {
+		t.Fatal("expected error for unmarshalable value, got nil")
 	}
 }
 

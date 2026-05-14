@@ -336,7 +336,7 @@ func writeValuesYAML(values map[string]interface{}, outputPath string) error {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
 
-	data, err := yaml.Marshal(values)
+	data, err := marshalYAML(values)
 	if err != nil {
 		return fmt.Errorf("marshaling values YAML: %w", err)
 	}
@@ -346,4 +346,16 @@ func writeValuesYAML(values map[string]interface{}, outputPath string) error {
 	}
 
 	return nil
+}
+
+// marshalYAML wraps yaml.Marshal to recover from panics on unmarshalable types.
+func marshalYAML(values map[string]interface{}) (data []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			// yaml.Marshal panics on types like channels; convert to error
+			data = nil
+			err = fmt.Errorf("yaml marshal panic: %v", r)
+		}
+	}()
+	return yaml.Marshal(values)
 }
