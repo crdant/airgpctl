@@ -152,4 +152,5 @@
 **Tests:** `go test ./pkg/distribution/...` passes.
 **Build:** `go build ./cmd/airgapctl` produces working binary.
 
-**Commit:** `497005c`
+**Commits:** `d429462`, `497005c`
+**Learning documented:** `docs/solutions/best-practices/image-reference-parsing-testing-conventions-2026-05-14.md`
