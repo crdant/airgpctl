@@ -31,7 +31,7 @@ The `ralph` script in the repo root is the iteration driver. It loops OpenCode s
 
 ## Architecture Notes
 
-- **Entrypoint**: Standard `main` package CLI (to be created).
+- **Entrypoint**: `cmd/airgapctl/main.go` — standard `main` package CLI with Cobra.
 - **Core packages** (expected):
   - Bundle extraction and `airgap.yaml` parsing.
   - Docker distribution v2 directory traversal and manifest resolution.
@@ -51,7 +51,9 @@ The `ralph` script in the repo root is the iteration driver. It loops OpenCode s
 ## Files That Matter
 
 - `docs/brainstorms/2026-05-14-airgapctl-requirements.md` — PRD, acceptance examples, scope boundaries.
+- `docs/plans/` — Active implementation plans.
 - `docs/progress.md` — Live task tracker. Update after every session.
+- `docs/solutions/` — Documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
 - `ralph` — Iteration driver script. Do not break its contract (reads PRD + progress, expects `<promise>COMPLETE</promise>` when done).
 
 ## Common Mistakes to Avoid
