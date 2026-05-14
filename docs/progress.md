@@ -7,7 +7,7 @@
 
 - [x] **U1. Wire bearer-token auth and surface docker-config errors**
 - [x] **U2. Harden chart image reference extraction**
-- [ ] **U3. Deduplicate image-path helpers into pkg/distribution**
+- [x] **U3. Deduplicate image-path helpers into pkg/distribution**
 - [ ] **U4. Graceful tar/gzip detection in bundle extraction**
 - [ ] **U5. Safer chart directory selection after extraction**
 - [ ] **U6. Improve registry HTTP error classification**
@@ -135,3 +135,21 @@
 
 **Commits:** `1ab3483`, `50f93d2`
 **Learning documented:** `docs/solutions/best-practices/chart-image-reference-extraction-2026-05-14.md`
+
+### U3 — Deduplicate image-path helpers into pkg/distribution (2026-05-14)
+
+**Original commit:** `d429462`
+
+**Review findings addressed:**
+- `ImageName` did not strip digest references, causing incorrect short-name extraction (e.g. `"nginx@sha256:abc123"` → `"nginx@sha256:abc123"` instead of `"nginx"`). This broke chart image matching and filtering for digest-based bundle images.
+- `TestImageName` and `TestStripTag` used plain loops without `t.Run`, inconsistent with `TestImagePath`.
+- Missing test coverage for digest refs, combined tag+digest, and port-registry+digest edge cases.
+
+**Files created/modified:**
+- `pkg/distribution/reference.go` — fixed `ImageName` to strip digest (and tag) before extracting last path component; removed misleading "do not strip digest" comment
+- `pkg/distribution/reference_test.go` — added digest test cases for `ImageName`; added `t.Run` wrappers for `TestImageName` and `TestStripTag`; added port-registry+digest test for `ImagePath`
+
+**Tests:** `go test ./pkg/distribution/...` passes.
+**Build:** `go build ./cmd/airgapctl` produces working binary.
+
+**Commit:** `497005c`
