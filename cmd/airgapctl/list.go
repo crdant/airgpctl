@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/replicatedhq/airgapctl/pkg/bundle"
@@ -54,7 +54,7 @@ func newListCmd() *cobra.Command {
 					for _, m := range img.Manifests {
 						parts = append(parts, m.Platform)
 					}
-					platforms = fmt.Sprintf("%d (%s)", len(parts), filepath.Join(parts...))
+					platforms = fmt.Sprintf("%d (%s)", len(parts), strings.Join(parts, ", "))
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", img.SourceRef, imgType, img.Digest, platforms)
 			}

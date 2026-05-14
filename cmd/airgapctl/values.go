@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/replicatedhq/airgapctl/pkg/bundle"
 	"github.com/replicatedhq/airgapctl/pkg/distribution"
@@ -100,26 +101,20 @@ func newValuesCmd() *cobra.Command {
 // extractImageRefs performs a naive extraction of potential image references from chart values text.
 func extractImageRefs(data string) []string {
 	var refs []string
-	// Very simple heuristic: look for lines containing "repository:" or image-like strings
-	lines := []string{}
-	for _, line := range splitLines(data) {
-		lines = append(lines, line)
-	}
-
-	for _, line := range lines {
-		line = trimSpace(line)
+	for _, line := range strings.Split(data, "\n") {
+		line = strings.TrimSpace(line)
 		// Look for repository: values or inline image references
-		if idx := findSubstr(line, "repository:"); idx >= 0 {
-			repo := trimSpace(line[idx+len("repository:"):])
+		if idx := strings.Index(line, "repository:"); idx >= 0 {
+			repo := strings.TrimSpace(line[idx+len("repository:"):])
 			if repo != "" {
 				refs = append(refs, repo)
 			}
 		}
 		// Also look for image: lines that might contain full references
-		if idx := findSubstr(line, "image:"); idx >= 0 {
-			img := trimSpace(line[idx+len("image:"):])
+		if idx := strings.Index(line, "image:"); idx >= 0 {
+			img := strings.TrimSpace(line[idx+len("image:"):])
 			if img != "" && img[0] == '"' {
-				img = trimQuotes(img)
+				img = strings.Trim(img, "\"")
 				if img != "" {
 					refs = append(refs, img)
 				}
@@ -127,47 +122,4 @@ func extractImageRefs(data string) []string {
 		}
 	}
 	return refs
-}
-
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
-}
-
-func trimSpace(s string) string {
-	start := 0
-	for start < len(s) && (s[start] == ' ' || s[start] == '\t') {
-		start++
-	}
-	end := len(s)
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n' || s[end-1] == '\r') {
-		end--
-	}
-	return s[start:end]
-}
-
-func findSubstr(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}
-
-func trimQuotes(s string) string {
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		return s[1 : len(s)-1]
-	}
-	return s
 }
