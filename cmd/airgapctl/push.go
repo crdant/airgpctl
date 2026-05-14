@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/replicatedhq/airgapctl/pkg/bundle"
+	"github.com/replicatedhq/airgapctl/pkg/distribution"
+	"github.com/replicatedhq/airgapctl/pkg/registry"
 	"github.com/spf13/cobra"
 )
 
@@ -45,8 +50,71 @@ func newPushCmd() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintf(cmd.OutOrStdout(), "Pushing images from %s to registry %s\n", globalOpts.bundle, pushOpts.registry)
-			fmt.Fprintln(cmd.OutOrStdout(), "  (push implementation pending)")
+			b, err := bundle.OpenBundle(globalOpts.bundle)
+			if err != nil {
+				return fmt.Errorf("opening bundle: %w", err)
+			}
+
+			extractDir, err := os.MkdirTemp("", "airgapctl-push-*")
+			if err != nil {
+				return fmt.Errorf("creating temp directory: %w", err)
+			}
+			defer os.RemoveAll(extractDir)
+
+			if err := b.ExtractTo(extractDir); err != nil {
+				return fmt.Errorf("extracting bundle: %w", err)
+			}
+
+			walker := distribution.NewWalker(extractDir)
+			images, err := walker.ResolveImages(b.SavedImages)
+			if err != nil {
+				return fmt.Errorf("resolving images: %w", err)
+			}
+
+			var pushRequests []registry.ImagePush
+			for _, img := range images {
+				pushRequests = append(pushRequests, registry.ImagePush{
+					Source:   img,
+					DestRepo: img.Repository,
+					Tag:      img.Tag,
+				})
+			}
+
+			cfg := registry.Config{
+				Registry: pushOpts.registry,
+				Username: pushOpts.username,
+				Password: pushOpts.password,
+				Insecure: pushOpts.tlsSkipVerify,
+			}
+			pusher := registry.NewPusher(cfg)
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Pushing %d images to %s\n", len(pushRequests), pushOpts.registry)
+			start := time.Now()
+
+			reports := pusher.Push(context.Background(), pushRequests, walker, func(p registry.Progress) {
+				fmt.Fprintf(cmd.OutOrStdout(), "[%d/%d] %s\n", p.Current, p.Total, p.Image)
+			})
+
+			var pushed, skipped, failed int
+			for _, r := range reports {
+				if !r.Success {
+					failed++
+					if r.Error != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Failed: %s: %v\n", r.Image.SourceRef, r.Error)
+					}
+				} else if r.Skipped {
+					skipped++
+				} else {
+					pushed++
+				}
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Done in %s — %d pushed, %d skipped, %d failed\n",
+				time.Since(start).Round(time.Second), pushed, skipped, failed)
+
+			if failed > 0 {
+				return fmt.Errorf("%d image(s) failed to push", failed)
+			}
 			return nil
 		},
 	}

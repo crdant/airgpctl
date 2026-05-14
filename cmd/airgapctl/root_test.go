@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -128,22 +131,39 @@ func TestPushCredentialsFromEnvVars(t *testing.T) {
 	defer os.Unsetenv("AIRGAPCTL_REGISTRY_USERNAME")
 	defer os.Unsetenv("AIRGAPCTL_REGISTRY_PASSWORD")
 
-	// Create a fake bundle file so bundle validation passes
-	tmpFile := filepath.Join(t.TempDir(), "fake.airgap")
-	if err := os.WriteFile(tmpFile, []byte("fake"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	// Create a valid mock bundle
+	tmpDir := t.TempDir()
+	manifestJSON := makeSingleArchManifest(t)
+	bundlePath := createMockAirgapBundle(t, tmpDir, []string{"nginx:latest"}, []mockImageLayout{
+		{repo: "library/nginx", tag: "latest", manifestDigest: "nginx123", manifestJSON: manifestJSON},
+	})
+
+	// Create a mock registry server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/"):
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/blobs/uploads/"):
+			w.Header().Set("Location", "/upload")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/upload"):
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/"):
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/manifests/"):
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
 
 	cmd := newRootCmd()
-	// We can't fully test the registry push without a real registry,
-	// but we can verify env vars are picked up by checking that the
-	// command reaches the RunE phase instead of credential errors.
-	out, outErr, _, err := executeCommand(cmd, "push", "--registry", "example.com", "--bundle", tmpFile)
+	out, outErr, _, err := executeCommand(cmd, "push", "--registry", server.URL, "--bundle", bundlePath)
 	if err != nil {
 		t.Fatalf("unexpected error: %v (stderr: %s)", err, outErr)
 	}
-	// Verify the command executed successfully (stub RunE returns nil)
-	if !strings.Contains(out, "Pushing images") {
+	if !strings.Contains(out, "Pushing") {
 		t.Errorf("expected push to proceed to RunE, got stdout: %s, stderr: %s", out, outErr)
 	}
 }
@@ -223,20 +243,38 @@ func TestDockerConfigFallback(t *testing.T) {
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	configContent := `{"auths":{"example.com":{"auth":"ZmFrZTp0b2tlbg=="}}}`
+	// Create a mock registry server first so we know its URL
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/blobs/"):
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/blobs/uploads/"):
+			w.Header().Set("Location", "/upload")
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/upload"):
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodHead && strings.Contains(r.URL.Path, "/manifests/"):
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/manifests/"):
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	configContent := fmt.Sprintf(`{"auths":{"%s":{"auth":"ZmFrZTp0b2tlbg=="}}}`, server.URL)
 	configPath := filepath.Join(configDir, "config.json")
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create a fake bundle file so bundle validation passes
-	bundleFile := filepath.Join(tmpDir, "fake.airgap")
-	if err := os.WriteFile(bundleFile, []byte("fake"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	// Create a valid mock bundle
+	manifestJSON := makeSingleArchManifest(t)
+	bundleFile := createMockAirgapBundle(t, tmpDir, []string{"nginx:latest"}, []mockImageLayout{
+		{repo: "library/nginx", tag: "latest", manifestDigest: "nginx123", manifestJSON: manifestJSON},
+	})
 
-	// We verify that the command doesn't fail on credential resolution
-	// by checking it proceeds to RunE
 	oldDockerConfig := os.Getenv("DOCKER_CONFIG")
 	os.Setenv("DOCKER_CONFIG", configDir)
 	defer func() {
@@ -248,12 +286,11 @@ func TestDockerConfigFallback(t *testing.T) {
 	}()
 
 	cmd := newRootCmd()
-	out, outErr, _, err := executeCommand(cmd, "push", "--registry", "example.com", "--bundle", bundleFile)
+	out, outErr, _, err := executeCommand(cmd, "push", "--registry", server.URL, "--bundle", bundleFile)
 	if err != nil {
 		t.Fatalf("unexpected error: %v (stderr: %s)", err, outErr)
 	}
-	// Verify the command executed successfully (stub RunE returns nil)
-	if !strings.Contains(out, "Pushing images") {
+	if !strings.Contains(out, "Pushing") {
 		t.Errorf("expected push to proceed to RunE with docker config fallback, got stdout: %s, stderr: %s", out, outErr)
 	}
 	// Verify credentials were actually loaded from docker config
