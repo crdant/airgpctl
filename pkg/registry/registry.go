@@ -21,7 +21,7 @@ type Config struct {
 	Registry string // Host (and optional port) of the destination registry
 	Username string // Basic auth username (empty for anonymous)
 	Password string // Basic auth password or token
-	Insecure bool // Skip TLS certificate verification
+	Insecure bool   // Skip TLS certificate verification
 	// TODO: CustomCA []byte // PEM-encoded CA certificate for private registries (R2)
 }
 

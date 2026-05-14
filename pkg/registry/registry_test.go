@@ -16,12 +16,12 @@ import (
 
 // mockRegistry implements a minimal Docker Registry HTTP API V2 for testing.
 type mockRegistry struct {
-	server     *httptest.Server
-	mu         sync.Mutex
-	blobs      map[string]bool // key: "repo|digest"
-	manifests  map[string][]byte // key: "repo|reference"
-	tokenAuth  bool
-	requests   []string // log of request paths for verification
+	server    *httptest.Server
+	mu        sync.Mutex
+	blobs     map[string]bool   // key: "repo|digest"
+	manifests map[string][]byte // key: "repo|reference"
+	tokenAuth bool
+	requests  []string // log of request paths for verification
 }
 
 func newMockRegistry(t *testing.T) *mockRegistry {
@@ -167,10 +167,10 @@ func TestPusher_Push_SingleArch(t *testing.T) {
 
 	walker := distribution.NewWalker(tmpDir)
 	img := distribution.Image{
-		SourceRef:  "nginx:latest",
-		Repository: "library/nginx",
-		Tag:        "latest",
-		Digest:     "sha256:" + manifestDigest,
+		SourceRef:   "nginx:latest",
+		Repository:  "library/nginx",
+		Tag:         "latest",
+		Digest:      "sha256:" + manifestDigest,
 		IsMultiArch: false,
 	}
 
