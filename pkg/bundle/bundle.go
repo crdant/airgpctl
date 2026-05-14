@@ -3,6 +3,7 @@ package bundle
 
 import (
 	"archive/tar"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
@@ -14,9 +15,9 @@ import (
 
 // Bundle represents a parsed .airgap bundle.
 type Bundle struct {
-	Version     string   `yaml:"Version"`
-	Type        string   `yaml:"Type"`
-	SavedImages []string `yaml:"SavedImages"`
+	Spec struct {
+		SavedImages []string `yaml:"savedImages"`
+	} `yaml:"spec"`
 
 	bundlePath string
 }
@@ -29,7 +30,13 @@ func OpenBundle(path string) (*Bundle, error) {
 	}
 	defer f.Close()
 
-	tr := tar.NewReader(f)
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return nil, fmt.Errorf("decompressing bundle: %w", err)
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
 	var airgapYamlData []byte
 	for {
 		header, err := tr.Next()
@@ -59,7 +66,7 @@ func OpenBundle(path string) (*Bundle, error) {
 	}
 	b.bundlePath = path
 
-	if b.SavedImages == nil {
+	if b.Spec.SavedImages == nil {
 		return nil, fmt.Errorf("airgap.yaml missing SavedImages field")
 	}
 
@@ -78,7 +85,13 @@ func (b *Bundle) ExtractTo(dest string) error {
 	}
 	defer f.Close()
 
-	tr := tar.NewReader(f)
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("decompressing bundle: %w", err)
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {

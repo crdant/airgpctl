@@ -13,7 +13,7 @@ func createMockDistributionLayout(t *testing.T, dir string, repo string, tag str
 	t.Helper()
 
 	// Create manifest link files
-	manifestDir := filepath.Join(dir, "images", repo, "_manifests", "revisions", "sha256", manifestDigest)
+	manifestDir := filepath.Join(dir, "repositories", repo, "_manifests", "revisions", "sha256", manifestDigest)
 	if err := os.MkdirAll(manifestDir, 0755); err != nil {
 		t.Fatalf("creating manifest dir: %v", err)
 	}
@@ -21,7 +21,7 @@ func createMockDistributionLayout(t *testing.T, dir string, repo string, tag str
 		t.Fatalf("writing manifest revision link: %v", err)
 	}
 
-	tagDir := filepath.Join(dir, "images", repo, "_manifests", "tags", tag, "current")
+	tagDir := filepath.Join(dir, "repositories", repo, "_manifests", "tags", tag, "current")
 	if err := os.MkdirAll(tagDir, 0755); err != nil {
 		t.Fatalf("creating tag dir: %v", err)
 	}
@@ -29,8 +29,12 @@ func createMockDistributionLayout(t *testing.T, dir string, repo string, tag str
 		t.Fatalf("writing tag link: %v", err)
 	}
 
-	// Create blob data
-	blobDir := filepath.Join(dir, "blobs", "sha256", manifestDigest)
+	// Create blob data with two-char prefix
+	prefix := ""
+	if len(manifestDigest) >= 2 {
+		prefix = manifestDigest[:2]
+	}
+	blobDir := filepath.Join(dir, "blobs", "sha256", prefix, manifestDigest)
 	if err := os.MkdirAll(blobDir, 0755); err != nil {
 		t.Fatalf("creating blob dir: %v", err)
 	}
@@ -294,7 +298,7 @@ func TestWalker_ResolveImages_MissingTag(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create repo but no tag
-	if err := os.MkdirAll(filepath.Join(tmpDir, "images", "library", "nginx", "_manifests", "tags"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(tmpDir, "repositories", "library", "nginx", "_manifests", "tags"), 0755); err != nil {
 		t.Fatalf("creating tag dir: %v", err)
 	}
 

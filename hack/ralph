@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ITERATIONS="${1:-10}"
+DOC=${1}
+ITERATIONS="${2:-10}"
 
 for i in $(seq 1 "$ITERATIONS"); do
   echo "🚀 Starting iteration $i / $ITERATIONS"
@@ -10,18 +11,18 @@ for i in $(seq 1 "$ITERATIONS"); do
 You are continuing a feature implementation.
 
 Inputs:
-- PRD: @docs/plans/2026-05-14-001-feat-cobra-cli-subcommands-plan.md
+- PRD: @${DOC}
 - Progress: @docs/progress.md
 - Repo notes: @AGENTS.md
 
 Rules:
-1. Pick the single highest-priority unfinished task.
-2. Use the ce-work skill to implement it test-first using true RED-GREEN-REFACTOR on a per test basis.
-3. Commit your work.
-4. Use the ce-code-review skill and LFG the results.
-5. Commit the review fixes.
-6. Capture what you learned with the ce-compound skill and write all the documents suggested.
-7. Update progress.md with what changed.
+1. Pick the next unfinished unit.
+2. Dispatch a subagent to run /ce-work @docs/${DOC} to implement that unit test first one RED-GREEN-REFACTOR at at time
+3. Wait for that agent to finish and commit your work.
+4. Dispatch a subagent to run /ce-code-review and address all findings test-first
+5. Wait for that agent to finish and commit the review fixes.
+6. Dispatch another agent to /ce-compound
+7. Wait for that agent to finish and update progress.md with what changed.
 8. Commit the progress update.
 9. If everything is done, output <promise>COMPLETE</promise>.
 "); then

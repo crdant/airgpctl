@@ -23,7 +23,6 @@ var valuesOpts struct {
 	registry  string
 	namespace string
 	output    string
-	template  string
 }
 
 func newValuesCmd() *cobra.Command {
@@ -123,39 +122,39 @@ func newValuesCmd() *cobra.Command {
 			}
 		}
 
-			// Read chart values.yaml to detect image references for filtering
-			chartValuesPath := filepath.Join(chartDir, "values.yaml")
-			chartData, err := os.ReadFile(chartValuesPath)
-			if err != nil {
-				return fmt.Errorf("reading chart values.yaml: %w", err)
+		// Read chart values.yaml to detect image references for filtering
+		chartValuesPath := filepath.Join(chartDir, "values.yaml")
+		chartData, err := os.ReadFile(chartValuesPath)
+		if err != nil {
+			return fmt.Errorf("reading chart values.yaml: %w", err)
+		}
+
+		// Extract potential image references from chart values for filtering
+		chartRefs := extractImageRefs(string(chartData))
+		matcher := values.NewChartMatcher(chartRefs)
+
+		// Filter images to only those referenced by the chart
+		var chartImages []distribution.Image
+		for _, img := range images {
+			if matcher.Match(imageNameFromRef(img.SourceRef)) {
+				chartImages = append(chartImages, img)
 			}
+		}
 
-			// Extract potential image references from chart values for filtering
-			chartRefs := extractImageRefs(string(chartData))
-			matcher := values.NewChartMatcher(chartRefs)
+		// Parse chart values as nested map for structure-preserving output
+		var chartValues map[string]interface{}
+		if err := yaml.Unmarshal(chartData, &chartValues); err != nil {
+			return fmt.Errorf("parsing chart values.yaml: %w", err)
+		}
 
-			// Filter images to only those referenced by the chart
-			var chartImages []distribution.Image
-			for _, img := range images {
-				if matcher.Match(imageNameFromRef(img.SourceRef)) {
-					chartImages = append(chartImages, img)
-				}
-			}
+		remapped := values.RemapChartValues(chartValues, chartImages, valuesOpts.registry, valuesOpts.namespace)
 
-			// Parse chart values as nested map for structure-preserving output
-			var chartValues map[string]interface{}
-			if err := yaml.Unmarshal(chartData, &chartValues); err != nil {
-				return fmt.Errorf("parsing chart values.yaml: %w", err)
-			}
+		if err := writeValuesYAML(remapped, valuesOpts.output); err != nil {
+			return fmt.Errorf("generating values file: %w", err)
+		}
 
-			remapped := values.RemapChartValues(chartValues, chartImages, valuesOpts.registry, valuesOpts.namespace)
-
-			if err := writeValuesYAML(remapped, valuesOpts.output); err != nil {
-				return fmt.Errorf("generating values file: %w", err)
-			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "Wrote values file to %s (%d/%d images matched)\n", valuesOpts.output, len(chartImages), len(images))
-			return nil
+		fmt.Fprintf(cmd.OutOrStdout(), "Wrote values file to %s (%d/%d images matched)\n", valuesOpts.output, len(chartImages), len(images))
+		return nil
 		},
 	}
 
@@ -179,6 +178,7 @@ func extractImageRefs(data string) []string {
 		// Look for repository: values
 		if strings.HasPrefix(line, "repository:") {
 			repo := strings.TrimSpace(line[len("repository:"):])
+			repo = strings.Trim(repo, `"'`)
 			if repo != "" {
 				refs = append(refs, repo)
 			}
@@ -186,8 +186,9 @@ func extractImageRefs(data string) []string {
 		// Look for image: lines that might contain full references
 		if strings.HasPrefix(line, "image:") {
 			img := strings.TrimSpace(line[len("image:"):])
-			if img != "" && img[0] == '"' {
-				img = strings.Trim(img, "\"")
+			if img != "" {
+				// Strip surrounding quotes (single or double)
+				img = strings.Trim(img, `"'`)
 				if img != "" {
 					refs = append(refs, img)
 				}
@@ -197,8 +198,8 @@ func extractImageRefs(data string) []string {
 		if strings.HasPrefix(line, "- ") {
 			item := strings.TrimPrefix(line, "- ")
 			item = strings.TrimSpace(item)
-			item = strings.Trim(item, "\"")
-			if item != "" && strings.Contains(item, "/") && strings.Contains(item, ":") {
+			item = strings.Trim(item, `"'`)
+			if item != "" && strings.Contains(item, ":") {
 				refs = append(refs, item)
 			}
 		}
@@ -209,7 +210,7 @@ func extractImageRefs(data string) []string {
 // isChartTarball returns true if the path looks like a Helm chart tarball.
 func isChartTarball(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".tgz" || ext == ".gz" || strings.HasSuffix(path, ".tar.gz")
+	return ext == ".tgz" || strings.HasSuffix(path, ".tar.gz")
 }
 
 // extractTarball extracts a gzipped tar archive to the destination directory.
@@ -262,6 +263,9 @@ func extractTarball(src, dst string) error {
 			out.Close()
 		case tar.TypeSymlink, tar.TypeLink:
 			// Skip symlinks and hard links to prevent directory traversal attacks
+			continue
+		case tar.TypeXHeader, tar.TypeXGlobalHeader:
+			// Skip PAX extended headers
 			continue
 		}
 	}

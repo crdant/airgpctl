@@ -33,7 +33,14 @@ type Walker struct {
 }
 
 // NewWalker creates a new Walker for the given distribution directory.
+// It auto-detects the nested Docker v2 layout (images/docker/registry/v2).
 func NewWalker(basePath string) *Walker {
+	// The Replicated .airgap bundle extracts to a directory where the Docker v2
+	// registry layout is nested under images/docker/registry/v2.
+	nested := filepath.Join(basePath, "images", "docker", "registry", "v2")
+	if info, err := os.Stat(nested); err == nil && info.IsDir() {
+		basePath = nested
+	}
 	return &Walker{basePath: basePath}
 }
 
@@ -56,10 +63,16 @@ func (w *Walker) ResolveImages(savedImages []string) ([]Image, error) {
 
 // resolveSingleImage resolves one raw image reference to an Image.
 func (w *Walker) resolveSingleImage(raw string) (*Image, error) {
-	repo, tag := parseImageRef(raw)
+	_, tag := parseImageRef(raw)
+
+	// Map the raw image name to an on-disk repository path.
+	repo, err := w.findRepo(raw)
+	if err != nil {
+		return nil, err
+	}
 
 	// Read the tag's current manifest digest
-	tagLinkPath := filepath.Join(w.basePath, "images", repo, "_manifests", "tags", tag, "current", "link")
+	tagLinkPath := filepath.Join(w.basePath, "repositories", repo, "_manifests", "tags", tag, "current", "link")
 	linkData, err := os.ReadFile(tagLinkPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -116,7 +129,39 @@ func (w *Walker) resolveSingleImage(raw string) (*Image, error) {
 	return img, nil
 }
 
-// readBlob reads a blob from the blobs/sha256/<digest>/data path.
+// findRepo maps a raw saved image name to the on-disk repository directory.
+// It first tries the full repository path, then falls back to matching by
+// the last path component (image name) against the repositories/ directory.
+func (w *Walker) findRepo(raw string) (string, error) {
+	repo, _ := parseImageRef(raw)
+
+	// Try the repo directly
+	if _, err := os.Stat(filepath.Join(w.basePath, "repositories", repo)); err == nil {
+		return repo, nil
+	}
+
+	// Fall back: list all on-disk repositories and find one whose last
+	// path component matches the last component of the parsed repo.
+	lastPart := filepath.Base(repo)
+
+	entries, err := os.ReadDir(filepath.Join(w.basePath, "repositories"))
+	if err != nil {
+		return "", fmt.Errorf("listing repositories: %w", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if entry.Name() == lastPart {
+			return entry.Name(), nil
+		}
+	}
+
+	return "", fmt.Errorf("no on-disk repository found for %q", raw)
+}
+
+// readBlob reads a blob from the blobs/sha256/<xx>/<digest>/data path.
 func (w *Walker) readBlob(digest string) ([]byte, error) {
 	// digest is expected to be "sha256:<hex>"
 	parts := strings.SplitN(digest, ":", 2)
@@ -124,7 +169,11 @@ func (w *Walker) readBlob(digest string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid digest format: %s", digest)
 	}
 	algo, hash := parts[0], parts[1]
-	blobPath := filepath.Join(w.basePath, "blobs", algo, hash, "data")
+	if len(hash) < 2 {
+		return nil, fmt.Errorf("invalid digest hash: %s", digest)
+	}
+	prefix := hash[:2]
+	blobPath := filepath.Join(w.basePath, "blobs", algo, prefix, hash, "data")
 	return os.ReadFile(blobPath)
 }
 

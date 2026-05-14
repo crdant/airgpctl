@@ -92,14 +92,12 @@ func TestListFlagWinsOverPositional(t *testing.T) {
 }
 
 func TestPushRequiresRegistry(t *testing.T) {
-	// Create a fake bundle file so bundle validation passes
-	tmpFile := filepath.Join(t.TempDir(), "fake.airgap")
-	if err := os.WriteFile(tmpFile, []byte("fake"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	// Create a valid mock bundle so bundle validation passes
+	tmpDir := t.TempDir()
+	bundlePath := createMockAirgapBundle(t, tmpDir, []string{}, []mockImageLayout{})
 
 	cmd := newRootCmd()
-	_, _, _, err := executeCommand(cmd, "push", "--bundle", tmpFile)
+	_, _, _, err := executeCommand(cmd, "push", "--bundle", bundlePath)
 	if err == nil {
 		t.Fatal("expected error when --registry is missing")
 	}
@@ -109,14 +107,12 @@ func TestPushRequiresRegistry(t *testing.T) {
 }
 
 func TestValuesRequiresChart(t *testing.T) {
-	// Create a fake bundle file so bundle validation passes
-	tmpFile := filepath.Join(t.TempDir(), "fake.airgap")
-	if err := os.WriteFile(tmpFile, []byte("fake"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	// Create a valid mock bundle so bundle validation passes
+	tmpDir := t.TempDir()
+	bundlePath := createMockAirgapBundle(t, tmpDir, []string{}, []mockImageLayout{})
 
 	cmd := newRootCmd()
-	_, _, _, err := executeCommand(cmd, "values", "--bundle", tmpFile)
+	_, _, _, err := executeCommand(cmd, "values", "--bundle", bundlePath)
 	if err == nil {
 		t.Fatal("expected error when --chart is missing")
 	}
@@ -188,18 +184,6 @@ func TestValuesOutputFlag(t *testing.T) {
 	cmd.ExecuteC()
 	if !strings.Contains(out.String(), "--output") {
 		t.Error("expected --output flag in values help")
-	}
-}
-
-func TestValuesTemplateFlag(t *testing.T) {
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{"values", "--help"})
-	out := new(bytes.Buffer)
-	cmd.SetOut(out)
-	cmd.SetErr(out)
-	cmd.ExecuteC()
-	if !strings.Contains(out.String(), "--template") {
-		t.Error("expected --template flag in values help")
 	}
 }
 

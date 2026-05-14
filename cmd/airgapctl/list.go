@@ -33,7 +33,7 @@ func newListCmd() *cobra.Command {
 			}
 
 			walker := distribution.NewWalker(extractDir)
-			images, err := walker.ResolveImages(b.SavedImages)
+			images, err := walker.ResolveImages(b.Spec.SavedImages)
 			if err != nil {
 				return fmt.Errorf("resolving images: %w", err)
 			}

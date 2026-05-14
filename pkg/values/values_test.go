@@ -449,10 +449,12 @@ func TestChartMatcher(t *testing.T) {
 	}{
 		{"nginx", true},
 		{"redis", true},
-		{"nginx-plus", true},  // contains "nginx"
-		{"my-nginx", true},    // contains "nginx"
+		{"library/nginx", true},   // short name matches chart ref "nginx"
+		{"docker.io/library/nginx", true}, // short name matches chart ref "nginx"
+		{"nginx-plus", false},     // substring mismatch — no false positive
+		{"my-nginx", false},       // substring mismatch — no false positive
 		{"postgres", false},
-		{"predis", true},      // contains "redis" (false positive, documented behavior)
+		{"predis", false},         // substring mismatch — no false positive
 	}
 
 	for _, tt := range tests {

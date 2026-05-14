@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"archive/tar"
+	"compress/gzip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,7 +17,10 @@ func createMockAirgapBundle(t *testing.T, dir string, airgapYamlContent string) 
 	}
 	defer f.Close()
 
-	w := tar.NewWriter(f)
+	gw := gzip.NewWriter(f)
+	defer gw.Close()
+
+	w := tar.NewWriter(gw)
 	defer w.Close()
 
 	header := &tar.Header{
@@ -36,24 +40,19 @@ func createMockAirgapBundle(t *testing.T, dir string, airgapYamlContent string) 
 
 func TestOpenBundle(t *testing.T) {
 	tests := []struct {
-		name        string
-		content     string
-		wantVersion string
-		wantType    string
-		wantImages  []string
-		wantErr     bool
+		name       string
+		content    string
+		wantImages []string
+		wantErr    bool
 	}{
 		{
 			name: "valid bundle with multiple images",
-			content: `Version: "1"
-Type: "airgap"
-SavedImages:
-  - "nginx:latest"
-  - "postgres:14"
-  - "registry.replicated.com/myapp/myimage:v1.0.0"
+			content: `spec:
+  savedImages:
+    - "nginx:latest"
+    - "postgres:14"
+    - "registry.replicated.com/myapp/myimage:v1.0.0"
 `,
-			wantVersion: "1",
-			wantType:    "airgap",
 			wantImages: []string{
 				"nginx:latest",
 				"postgres:14",
@@ -63,44 +62,34 @@ SavedImages:
 		},
 		{
 			name: "valid bundle with single image",
-			content: `Version: "2"
-Type: "airgap"
-SavedImages:
-  - "busybox:latest"
+			content: `spec:
+  savedImages:
+    - "busybox:latest"
 `,
-			wantVersion: "2",
-			wantType:    "airgap",
-			wantImages:  []string{"busybox:latest"},
-			wantErr:     false,
+			wantImages: []string{"busybox:latest"},
+			wantErr:    false,
 		},
 		{
 			name: "valid bundle with no images",
-			content: `Version: "1"
-Type: "airgap"
-SavedImages: []
+			content: `spec:
+  savedImages: []
 `,
-			wantVersion: "1",
-			wantType:    "airgap",
-			wantImages:  []string{},
-			wantErr:     false,
+			wantImages: []string{},
+			wantErr:    false,
 		},
 		{
-			name:        "missing airgap.yaml in bundle",
-			content:     "", // Will create empty tar
-			wantVersion: "",
-			wantType:    "",
-			wantImages:  nil,
-			wantErr:     true,
+			name:     "missing airgap.yaml in bundle",
+			content:  "", // Will create empty tar
+			wantImages: nil,
+			wantErr:    true,
 		},
 		{
 			name: "missing SavedImages field",
-			content: `Version: "1"
-Type: "airgap"
+			content: `spec:
+  otherField: "value"
 `,
-			wantVersion: "1",
-			wantType:    "airgap",
-			wantImages:  nil,
-			wantErr:     true,
+			wantImages: nil,
+			wantErr:    true,
 		},
 	}
 
@@ -109,14 +98,16 @@ Type: "airgap"
 			tmpDir := t.TempDir()
 			var bundlePath string
 			if tt.name == "missing airgap.yaml in bundle" {
-				// Create an empty tar
+				// Create an empty gzipped tar
 				bundlePath = filepath.Join(tmpDir, "empty.airgap")
 				f, err := os.Create(bundlePath)
 				if err != nil {
 					t.Fatalf("creating empty bundle: %v", err)
 				}
-				w := tar.NewWriter(f)
+				gw := gzip.NewWriter(f)
+				w := tar.NewWriter(gw)
 				w.Close()
+				gw.Close()
 				f.Close()
 			} else {
 				bundlePath = createMockAirgapBundle(t, tmpDir, tt.content)
@@ -130,18 +121,12 @@ Type: "airgap"
 				return
 			}
 
-			if b.Version != tt.wantVersion {
-				t.Errorf("Version = %q, want %q", b.Version, tt.wantVersion)
-			}
-			if b.Type != tt.wantType {
-				t.Errorf("Type = %q, want %q", b.Type, tt.wantType)
-			}
-			if len(b.SavedImages) != len(tt.wantImages) {
-				t.Errorf("SavedImages length = %d, want %d", len(b.SavedImages), len(tt.wantImages))
+			if len(b.Spec.SavedImages) != len(tt.wantImages) {
+				t.Errorf("SavedImages length = %d, want %d", len(b.Spec.SavedImages), len(tt.wantImages))
 			} else {
 				for i, img := range tt.wantImages {
-					if b.SavedImages[i] != img {
-						t.Errorf("SavedImages[%d] = %q, want %q", i, b.SavedImages[i], img)
+					if b.Spec.SavedImages[i] != img {
+						t.Errorf("SavedImages[%d] = %q, want %q", i, b.Spec.SavedImages[i], img)
 					}
 				}
 			}
@@ -157,10 +142,9 @@ func TestOpenBundle_FileNotFound(t *testing.T) {
 }
 
 func TestBundle_ExtractTo(t *testing.T) {
-	content := `Version: "1"
-Type: "airgap"
-SavedImages:
-  - "nginx:latest"
+	content := `spec:
+  savedImages:
+    - "nginx:latest"
 `
 	tmpDir := t.TempDir()
 	bundlePath := createMockAirgapBundle(t, tmpDir, content)
@@ -194,13 +178,16 @@ SavedImages:
 func TestBundle_ExtractTo_DirectoryTraversal(t *testing.T) {
 	tmpDir := t.TempDir()
 	bundlePath := filepath.Join(tmpDir, "evil.airgap")
-	f, err := os.Create(bundlePath)
+		f, err := os.Create(bundlePath)
 	if err != nil {
 		t.Fatalf("creating evil bundle: %v", err)
 	}
 	defer f.Close()
 
-	w := tar.NewWriter(f)
+	gw := gzip.NewWriter(f)
+	defer gw.Close()
+
+	w := tar.NewWriter(gw)
 	defer w.Close()
 
 	// Add a malicious entry that tries to escape the extraction directory
