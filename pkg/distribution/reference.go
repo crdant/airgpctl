@@ -5,11 +5,13 @@ import "strings"
 // ImageName extracts the short image name from a repository path or full reference.
 // e.g. "library/nginx" → "nginx", "registry.com/ns/app:1.0" → "app"
 func ImageName(repo string) string {
-	// Strip tag if present, but do not strip digest
-	if !strings.Contains(repo, "@") {
-		if idx := strings.LastIndex(repo, ":"); idx > strings.LastIndex(repo, "/") {
-			repo = repo[:idx]
-		}
+	// Strip digest if present
+	if idx := strings.LastIndex(repo, "@"); idx != -1 {
+		repo = repo[:idx]
+	}
+	// Strip tag if present
+	if idx := strings.LastIndex(repo, ":"); idx > strings.LastIndex(repo, "/") {
+		repo = repo[:idx]
 	}
 	idx := strings.LastIndex(repo, "/")
 	if idx == -1 {
