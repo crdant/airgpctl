@@ -44,6 +44,10 @@ func (g *Generator) Generate(images []distribution.Image, outputPath string) err
 		if err != nil {
 			return fmt.Errorf("mapping %q: %w", img.SourceRef, err)
 		}
+
+		if _, exists := entries[name]; exists {
+			return fmt.Errorf("duplicate image name %q from repository %q", name, img.Repository)
+		}
 		entries[name] = dest
 	}
 
@@ -70,11 +74,11 @@ func (g *Generator) applyTemplate(repo, tag string) (string, error) {
 
 	// Build a replacement map
 	vars := map[string]string{
-		"registry":    g.Registry,
-		"namespace":   g.Namespace,
-		"name":        name,
-		"tag":         tag,
-		"repository":  repo,
+		"registry":   g.Registry,
+		"namespace":  g.Namespace,
+		"name":       name,
+		"tag":        tag,
+		"repository": repo,
 	}
 
 	result := tmpl

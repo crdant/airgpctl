@@ -388,6 +388,81 @@ func TestGenerator_Generate_InvalidTemplate(t *testing.T) {
 	}
 }
 
+func TestGenerator_Generate_DuplicateImageName(t *testing.T) {
+	g := &Generator{
+		Registry:  "myregistry.example.com",
+		Namespace: "",
+		Template:  "{registry}/{name}:{tag}",
+	}
+
+	images := []distribution.Image{
+		{
+			SourceRef:  "library/nginx:latest",
+			Repository: "library/nginx",
+			Tag:        "latest",
+		},
+		{
+			SourceRef:  "bitnami/nginx:latest",
+			Repository: "bitnami/nginx",
+			Tag:        "latest",
+		},
+	}
+
+	tmpDir := t.TempDir()
+	outputPath := filepath.Join(tmpDir, "images.yaml")
+
+	err := g.Generate(images, outputPath)
+	if err == nil {
+		t.Fatal("expected error for duplicate image name, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "duplicate image name") {
+		t.Errorf("expected 'duplicate image name' in error, got %v", err)
+	}
+}
+
+func TestImageName(t *testing.T) {
+	tests := []struct {
+		repo string
+		want string
+	}{
+		{"library/nginx", "nginx"},
+		{"registry.com/ns/app", "app"},
+		{"nginx", "nginx"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		got := imageName(tt.repo)
+		if got != tt.want {
+			t.Errorf("imageName(%q) = %q, want %q", tt.repo, got, tt.want)
+		}
+	}
+}
+
+func TestChartMatcher(t *testing.T) {
+	matcher := NewChartMatcher([]string{"nginx", "redis"})
+
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"nginx", true},
+		{"redis", true},
+		{"nginx-plus", true},  // contains "nginx"
+		{"my-nginx", true},    // contains "nginx"
+		{"postgres", false},
+		{"predis", true},      // contains "redis" (false positive, documented behavior)
+	}
+
+	for _, tt := range tests {
+		got := matcher.Match(tt.name)
+		if got != tt.want {
+			t.Errorf("ChartMatcher.Match(%q) = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestGenerator_Generate_OutputFileCreated(t *testing.T) {
 	g := &Generator{
 		Registry:  "myregistry.example.com",
