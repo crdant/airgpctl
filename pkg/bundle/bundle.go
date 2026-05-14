@@ -30,13 +30,19 @@ func OpenBundle(path string) (*Bundle, error) {
 	}
 	defer f.Close()
 
+	var tr *tar.Reader
 	gr, err := gzip.NewReader(f)
-	if err != nil {
+	if err == gzip.ErrHeader {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("seeking bundle file: %w", err)
+		}
+		tr = tar.NewReader(f)
+	} else if err != nil {
 		return nil, fmt.Errorf("decompressing bundle: %w", err)
+	} else {
+		defer gr.Close()
+		tr = tar.NewReader(gr)
 	}
-	defer gr.Close()
-
-	tr := tar.NewReader(gr)
 	var airgapYamlData []byte
 	for {
 		header, err := tr.Next()
@@ -85,13 +91,19 @@ func (b *Bundle) ExtractTo(dest string) error {
 	}
 	defer f.Close()
 
+	var tr *tar.Reader
 	gr, err := gzip.NewReader(f)
-	if err != nil {
+	if err == gzip.ErrHeader {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("seeking bundle file: %w", err)
+		}
+		tr = tar.NewReader(f)
+	} else if err != nil {
 		return fmt.Errorf("decompressing bundle: %w", err)
+	} else {
+		defer gr.Close()
+		tr = tar.NewReader(gr)
 	}
-	defer gr.Close()
-
-	tr := tar.NewReader(gr)
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {

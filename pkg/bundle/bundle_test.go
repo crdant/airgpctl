@@ -38,6 +38,33 @@ func createMockAirgapBundle(t *testing.T, dir string, airgapYamlContent string) 
 	return bundlePath
 }
 
+func createPlainTarBundle(t *testing.T, dir string, airgapYamlContent string) string {
+	t.Helper()
+	bundlePath := filepath.Join(dir, "test.airgap")
+	f, err := os.Create(bundlePath)
+	if err != nil {
+		t.Fatalf("creating mock bundle: %v", err)
+	}
+	defer f.Close()
+
+	w := tar.NewWriter(f)
+	defer w.Close()
+
+	header := &tar.Header{
+		Name: "airgap.yaml",
+		Size: int64(len(airgapYamlContent)),
+		Mode: 0644,
+	}
+	if err := w.WriteHeader(header); err != nil {
+		t.Fatalf("writing tar header: %v", err)
+	}
+	if _, err := w.Write([]byte(airgapYamlContent)); err != nil {
+		t.Fatalf("writing tar content: %v", err)
+	}
+
+	return bundlePath
+}
+
 func TestOpenBundle(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -215,5 +242,73 @@ func TestBundle_ExtractTo_DirectoryTraversal(t *testing.T) {
 	evilPath := filepath.Join(tmpDir, "evil.txt")
 	if _, err := os.Stat(evilPath); !os.IsNotExist(err) {
 		t.Fatalf("evil file was created outside extraction directory: %s", evilPath)
+	}
+}
+
+func TestOpenBundle_PlainTar(t *testing.T) {
+	content := `spec:
+  savedImages:
+    - "nginx:latest"
+`
+	tmpDir := t.TempDir()
+	bundlePath := createPlainTarBundle(t, tmpDir, content)
+
+	b, err := OpenBundle(bundlePath)
+	if err != nil {
+		t.Fatalf("OpenBundle() error = %v", err)
+	}
+
+	if len(b.Spec.SavedImages) != 1 || b.Spec.SavedImages[0] != "nginx:latest" {
+		t.Errorf("unexpected images: %v", b.Spec.SavedImages)
+	}
+}
+
+func TestBundle_ExtractTo_PlainTar(t *testing.T) {
+	content := `spec:
+  savedImages:
+    - "nginx:latest"
+`
+	tmpDir := t.TempDir()
+	bundlePath := createPlainTarBundle(t, tmpDir, content)
+
+	b, err := OpenBundle(bundlePath)
+	if err != nil {
+		t.Fatalf("OpenBundle() error = %v", err)
+	}
+
+	extractDir := filepath.Join(tmpDir, "extracted")
+	if err := b.ExtractTo(extractDir); err != nil {
+		t.Fatalf("ExtractTo() error = %v", err)
+	}
+
+	yamlPath := filepath.Join(extractDir, "airgap.yaml")
+	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
+		t.Fatalf("expected airgap.yaml to be extracted, but it was not found")
+	}
+
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatalf("reading extracted airgap.yaml: %v", err)
+	}
+	if string(data) != content {
+		t.Errorf("extracted content mismatch\ngot:\n%s\nwant:\n%s", string(data), content)
+	}
+}
+
+func TestOpenBundle_GzippedTar(t *testing.T) {
+	content := `spec:
+  savedImages:
+    - "postgres:14"
+`
+	tmpDir := t.TempDir()
+	bundlePath := createMockAirgapBundle(t, tmpDir, content)
+
+	b, err := OpenBundle(bundlePath)
+	if err != nil {
+		t.Fatalf("OpenBundle() error = %v", err)
+	}
+
+	if len(b.Spec.SavedImages) != 1 || b.Spec.SavedImages[0] != "postgres:14" {
+		t.Errorf("unexpected images: %v", b.Spec.SavedImages)
 	}
 }
