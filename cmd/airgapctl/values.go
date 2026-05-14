@@ -79,21 +79,14 @@ func newValuesCmd() *cobra.Command {
 				return fmt.Errorf("helm pull failed: %w\n%s", err, string(out))
 			}
 
-			// helm --untar extracts into a subdirectory named after the chart.
-			// Find the first directory inside tmpChartDir.
-			entries, err := os.ReadDir(tmpChartDir)
-			if err != nil {
-				return fmt.Errorf("reading extracted chart directory: %w", err)
-			}
-			for _, entry := range entries {
-				if entry.IsDir() {
-					chartDir = filepath.Join(tmpChartDir, entry.Name())
-					break
-				}
-			}
-			if chartDir == valuesOpts.chart {
-				return fmt.Errorf("helm pull did not produce an extracted chart directory")
-			}
+		// helm --untar extracts into a subdirectory named after the chart.
+		// Find the directory whose Chart.yaml metadata.name matches the chart
+		// reference name (last path component of the OCI URL).
+		expectedName := filepath.Base(valuesOpts.chart)
+		chartDir, err = findChartDir(tmpChartDir, expectedName)
+		if err != nil {
+			return fmt.Errorf("helm pull did not produce an extracted chart directory: %w", err)
+		}
 		} else if isChartTarball(chartDir) {
 			// Extract local chart tarball to a temp directory
 			tmpChartDir, err := os.MkdirTemp("", "airgapctl-chart-*")
@@ -106,20 +99,13 @@ func newValuesCmd() *cobra.Command {
 				return fmt.Errorf("extracting chart tarball: %w", err)
 			}
 
-			// Find the first directory inside tmpChartDir (the chart name)
-			entries, err := os.ReadDir(tmpChartDir)
-			if err != nil {
-				return fmt.Errorf("reading extracted chart directory: %w", err)
-			}
-			for _, entry := range entries {
-				if entry.IsDir() {
-					chartDir = filepath.Join(tmpChartDir, entry.Name())
-					break
-				}
-			}
-			if chartDir == valuesOpts.chart {
-				return fmt.Errorf("chart tarball did not produce an extracted chart directory")
-			}
+		// Find the directory whose Chart.yaml metadata.name matches the chart
+		// name derived from the tarball filename.
+		expectedName := chartNameFromTarball(valuesOpts.chart)
+		chartDir, err = findChartDir(tmpChartDir, expectedName)
+		if err != nil {
+			return fmt.Errorf("chart tarball did not produce an extracted chart directory: %w", err)
+		}
 		}
 
 		// Read chart values.yaml to detect image references for filtering
@@ -283,6 +269,62 @@ func imageNameFromRef(ref string) string {
 		return ref
 	}
 	return ref[idx+1:]
+}
+
+// findChartDir looks inside root for an immediate subdirectory that contains a
+// Chart.yaml whose metadata.name matches expectedName. If none match, it falls
+// back to the first subdirectory it finds.
+func findChartDir(root string, expectedName string) (string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", fmt.Errorf("reading extracted chart directory: %w", err)
+	}
+
+	var firstDir string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dirPath := filepath.Join(root, entry.Name())
+		if firstDir == "" {
+			firstDir = dirPath
+		}
+
+		chartYAMLPath := filepath.Join(dirPath, "Chart.yaml")
+		data, err := os.ReadFile(chartYAMLPath)
+		if err != nil {
+			continue
+		}
+
+		var meta struct {
+			Name string `yaml:"name"`
+		}
+		if err := yaml.Unmarshal(data, &meta); err != nil {
+			continue
+		}
+		if meta.Name == expectedName {
+			return dirPath, nil
+		}
+	}
+
+	if firstDir == "" {
+		return "", fmt.Errorf("no chart directory found in %s", root)
+	}
+	return firstDir, nil
+}
+
+// chartNameFromTarball returns the chart name derived from a tarball filename
+// by stripping the .tgz or .tar.gz extension.
+func chartNameFromTarball(path string) string {
+	base := filepath.Base(path)
+	lower := strings.ToLower(base)
+	if strings.HasSuffix(lower, ".tar.gz") {
+		return base[:len(base)-7]
+	}
+	if strings.HasSuffix(lower, ".tgz") {
+		return base[:len(base)-4]
+	}
+	return base
 }
 
 // writeValuesYAML marshals the values map to YAML and writes it to outputPath.

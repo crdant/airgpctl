@@ -167,3 +167,89 @@ func TestWriteValuesYAML(t *testing.T) {
 		t.Fatal("expected non-empty output file")
 	}
 }
+
+// --- findChartDir tests ---
+
+func TestFindChartDir_Match(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create foo/ with Chart.yaml name: foo
+	fooDir := filepath.Join(tmpDir, "foo")
+	if err := os.MkdirAll(fooDir, 0755); err != nil {
+		t.Fatalf("creating foo dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fooDir, "Chart.yaml"), []byte("name: foo\n"), 0644); err != nil {
+		t.Fatalf("writing foo Chart.yaml: %v", err)
+	}
+
+	// Create bar/ with Chart.yaml name: bar
+	barDir := filepath.Join(tmpDir, "bar")
+	if err := os.MkdirAll(barDir, 0755); err != nil {
+		t.Fatalf("creating bar dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(barDir, "Chart.yaml"), []byte("name: bar\n"), 0644); err != nil {
+		t.Fatalf("writing bar Chart.yaml: %v", err)
+	}
+
+	got, err := findChartDir(tmpDir, "bar")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := barDir
+	if got != want {
+		t.Errorf("findChartDir(%q, %q) = %q, want %q", tmpDir, "bar", got, want)
+	}
+}
+
+func TestFindChartDir_Fallback(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create foo/ with Chart.yaml name: foo
+	fooDir := filepath.Join(tmpDir, "foo")
+	if err := os.MkdirAll(fooDir, 0755); err != nil {
+		t.Fatalf("creating foo dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fooDir, "Chart.yaml"), []byte("name: foo\n"), 0644); err != nil {
+		t.Fatalf("writing foo Chart.yaml: %v", err)
+	}
+
+	// Create bar/ with Chart.yaml name: baz (does not match expected)
+	barDir := filepath.Join(tmpDir, "bar")
+	if err := os.MkdirAll(barDir, 0755); err != nil {
+		t.Fatalf("creating bar dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(barDir, "Chart.yaml"), []byte("name: baz\n"), 0644); err != nil {
+		t.Fatalf("writing bar Chart.yaml: %v", err)
+	}
+
+	got, err := findChartDir(tmpDir, "nomatch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Fallback returns the first directory found; filesystem ordering is
+	// undefined, so accept either directory.
+	if got != fooDir && got != barDir {
+		t.Errorf("findChartDir(%q, %q) = %q, want either %q or %q", tmpDir, "nomatch", got, fooDir, barDir)
+	}
+}
+
+func TestFindChartDir_SingleDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	chartDir := filepath.Join(tmpDir, "chart")
+	if err := os.MkdirAll(chartDir, 0755); err != nil {
+		t.Fatalf("creating chart dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: chart\n"), 0644); err != nil {
+		t.Fatalf("writing chart Chart.yaml: %v", err)
+	}
+
+	got, err := findChartDir(tmpDir, "chart")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := chartDir
+	if got != want {
+		t.Errorf("findChartDir(%q, %q) = %q, want %q", tmpDir, "chart", got, want)
+	}
+}
