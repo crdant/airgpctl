@@ -206,4 +206,5 @@
 - `pkg/distribution`: 90.9% → 92.7%
 - `cmd/airgapctl`: 73.6% → 76.3%
 
-**Commit:** `210755f`
+**Commits:** `210755f`, `b56192c`
+**Learning documented:** `docs/solutions/best-practices/unit-test-coverage-public-functions-go-2026-05-14.md`
