@@ -36,3 +36,14 @@ tests/e2e/airgapctl
 
 # OS
 .DS_Store
+
+# Git worktrees
+.worktrees/
+
+# Demo generated artifacts
+demo/*.gif
+demo/fixtures/*.airgap
+
+# Demo temp binaries
+demo/airgapctl
+demo/generate-bundle

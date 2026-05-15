@@ -1,0 +1,7 @@
+# Demo generated artifacts
+demo/*.gif
+demo/fixtures/*.airgap
+
+# Demo temp binaries
+demo/airgapctl
+demo/generate-bundle
