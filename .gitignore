@@ -22,7 +22,14 @@ go.work
 # Build artifacts
 bin/
 dist/
-airgapctl
+/airgapctl
+
+# Nix build outputs
+result
+result-*
+
+# Don't ignore the main package source directory
+!cmd/airgapctl/
 
 # IDE
 .idea/
@@ -33,3 +40,7 @@ airgapctl
 
 # OS
 .DS_Store
+
+# direnv
+.direnv/
+
