@@ -1,4 +1,4 @@
-.PHONY: all build test e2e clean lint fmt vet coverage install tidy deps demo-deps demo-clean demo-fixtures
+.PHONY: all build test e2e clean lint fmt vet coverage install tidy deps demo-deps demo-clean demo-fixtures demo
 
 # Variables
 BINARY_NAME := airgapctl
@@ -93,3 +93,7 @@ demo-clean:
 	@rm -f demo/airgapctl
 	@rm -f demo/generate-bundle
 	@echo "Done."
+
+# Record full VHS demo (build, fixtures, record)
+demo: demo-deps
+	@demo/run-demo.sh
