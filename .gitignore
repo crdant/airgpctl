@@ -22,7 +22,10 @@ go.work
 # Build artifacts
 bin/
 dist/
-airgapctl
+/airgapctl
+
+# Don't ignore the main package source directory
+!cmd/airgapctl/
 
 # IDE
 .idea/
