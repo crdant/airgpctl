@@ -4,6 +4,7 @@
 - **Plan**: feat: Nix flake with direnv for reproducible dev environment
 - **Plan File**: `docs/plans/2026-05-14-005-feat-nix-flake-direnv-plan.md`
 - **Started**: 2026-05-14
+- **Status**: completed
 
 ## Implementation Units
 
@@ -37,20 +38,24 @@
 - **Review**: No findings — changes are correct and complete.
 
 ### U3. Update README with Nix setup instructions
-- **Status**: in_progress
+- **Status**: completed
 - **Goal**: Document the Nix path and reconcile existing manual prerequisites with actual Go version.
 - **Requirements**: R4
 - **Dependencies**: U2
 - **Files**: `README.md`
 - **Verification**:
-  - [ ] README renders correctly
-  - [ ] Go version in manual prerequisites matches go.mod
-  - [ ] Nix instructions are discoverable
+  - [x] README renders correctly (markdown syntax valid)
+  - [x] Go version in manual prerequisites matches go.mod (1.25)
+  - [x] Nix instructions are discoverable at a glance
+- **Commit**: `e53d395` docs(readme): add Nix setup instructions and update Go version
+- **Review**: No findings — changes are correct and complete.
 
 ## Completed
 - U1 completed 2026-05-14
 - U2 completed 2026-05-14
+- U3 completed 2026-05-14
 
 ## Notes
 - No progress.md existed previously; this file was created to track the Nix flake implementation.
 - Learning documented in `docs/solutions/developer-experience/nix-flake-golang-cli.md`.
+- All plan requirements (R1–R5) are satisfied.
