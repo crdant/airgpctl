@@ -79,7 +79,7 @@ func fixturePath(envVar, defaultPath string) string {
 }
 
 func TestFixturePath_Default(t *testing.T) {
-	os.Unsetenv("AIRGAPCTL_E2E_TEST_DEFAULT")
+	t.Setenv("AIRGAPCTL_E2E_TEST_DEFAULT", "")
 	got := fixturePath("AIRGAPCTL_E2E_TEST_DEFAULT", "/default/path")
 	if got != "/default/path" {
 		t.Errorf("expected default path, got %q", got)
