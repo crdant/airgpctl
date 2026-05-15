@@ -40,3 +40,7 @@ result-*
 
 # OS
 .DS_Store
+
+# direnv
+.direnv/
+
