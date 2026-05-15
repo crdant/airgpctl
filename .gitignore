@@ -24,6 +24,10 @@ bin/
 dist/
 /airgapctl
 
+# Nix build outputs
+result
+result-*
+
 # Don't ignore the main package source directory
 !cmd/airgapctl/
 

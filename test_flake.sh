@@ -4,6 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Ensure result symlink is cleaned up on exit or interrupt
+trap 'rm -f result' EXIT
+
 echo "=== Test 1: nix develop --command go version ==="
 go_version=$(nix develop --command go version 2>/dev/null | head -1)
 echo "$go_version"
