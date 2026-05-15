@@ -6,10 +6,10 @@
 ## Implementation Units (VHS GIF Demo)
 
 - [x] **U1. Install VHS tooling and scaffold demo directory**
-- [ ] **U2. Create demo fixtures (mock bundle and Helm chart)**
-- [ ] **U3. Verify TTL.sh push compatibility**
-- [ ] **U4. Write VHS tape script**
-- [ ] **U5. Generate GIF, add Makefile target, and update README**
+- [x] **U2. Create demo fixtures (mock bundle and Helm chart)**
+- [x] **U3. Verify TTL.sh push compatibility**
+- [x] **U4. Write VHS tape script**
+- [x] **U5. Generate GIF, add Makefile target, and update README**
 
 ### U1 — Install VHS tooling and scaffold demo directory (2026-05-14)
 
@@ -23,6 +23,49 @@
 **Review fix:** `.gitkeep` accidentally contained `.gitignore`-style patterns — corrected to empty file (commit `74d3693`).
 
 **Commits:** `4e50e99`, `74d3693`
+
+### U2 — Create demo fixtures (mock bundle and Helm chart) (2026-05-14)
+
+**Files created/modified:**
+- `demo/generate-bundle.go` — standalone Go program that writes `demo/fixtures/bundle.airgap` with one multi-arch image (`nginx:latest`) and two single-arch images (`redis:7`, `postgres:15`)
+- `demo/fixtures/chart/Chart.yaml` — minimal Helm metadata (`apiVersion: v2`, `name: demo-app`, `version: 0.1.0`)
+- `demo/fixtures/chart/values.yaml` — references `nginx` and `redis` images (partial matching for `values` subcommand demo)
+
+**Verification:** `go run demo/generate-bundle.go` succeeds; `./bin/airgapctl list --bundle demo/fixtures/bundle.airgap` prints three images with correct types.
+
+**Commits:** `e14d553`, `ad36293`
+
+### U3 — Verify TTL.sh push compatibility (2026-05-14)
+
+**Verification:** `./bin/airgapctl push --bundle demo/fixtures/bundle.airgap --registry ttl.sh --namespace airgapctl-demo --username unused --password unused` completed with `3 pushed, 0 skipped, 0 failed`.
+
+### U4 — Write VHS tape script (2026-05-14)
+
+**Files created:**
+- `demo/airgapctl-demo.tape` — VHS script with Rose Pine Moon theme, Inconsolata font, 1200x800; narrative: build → help → list → push → values → cat output
+
+**Verification:** `vhs demo/airgapctl-demo.tape` runs without error and produces `demo/airgapctl-demo.gif`.
+
+**Commit:** `b4740d8`
+
+### U5 — Generate GIF, add Makefile target, and update README (2026-05-14)
+
+**Files created/modified:**
+- `demo/run-demo.sh` — orchestrates VHS recording
+- `Makefile` — added `make demo` target that depends on `demo-deps`, `build`, and `demo-fixtures`
+- `README.md` — embedded GIF below description; replaced "Usage: Coming soon." with concise `list`, `push`, `values` examples; added Demo subsection referencing `make demo`
+- `.gitignore` — un-ignores `demo/airgapctl-demo.gif` while ignoring other generated artifacts
+
+**Review fixes (commit `91d244d`):**
+- `generate-bundle.go`: propagate Close errors instead of swallowing; return error from `makeSingleArchManifest` instead of `panic`
+- `Makefile`: `demo-deps` fails fast when `vhs`/`ttyd` missing; `demo-clean` removes `demo/values-airgap.yaml`; removed stale binary paths
+- `.gitignore`: added `demo/values-airgap.yaml`; removed stale demo binary paths
+- `demo tape`: added `--tls-skip-verify` for resilient push demo
+- `run-demo.sh`: removed build/fixture steps (now handled by Makefile dependencies)
+
+**Verification:** `make demo` completes end-to-end and produces `demo/airgapctl-demo.gif`.
+
+**Commits:** `b4740d8`, `1b06ce2`, `c8cf36e`, `91d244d`
 
 ## Previous Plan (Completed)
 [docs/plans/2026-05-14-003-feat-e2e-test-suite-real-fixtures-plan.md](docs/plans/2026-05-14-003-feat-e2e-test-suite-real-fixtures-plan.md)
