@@ -24,17 +24,20 @@
 - **Notes**: Also created `cmd/airgapctl/main.go` (minimal stub CLI) since buildGoModule requires a main package. Added `test_flake.sh` for automated verification. Expanded systems to all 4 common platforms. Added Nix result symlinks to `.gitignore`.
 
 ### U2. Create .envrc and update .gitignore
-- **Status**: in_progress
+- **Status**: completed
 - **Goal**: Enable automatic flake activation via direnv and ignore direnv artifacts.
 - **Requirements**: R2
 - **Dependencies**: U1
 - **Files**: `.envrc`, `.gitignore`
 - **Verification**:
-  - [ ] `direnv allow` succeeds
-  - [ ] PATH inside project directory includes vhs, go, make
+  - [x] `direnv allow` succeeds
+  - [x] `direnv exec . go version` prints Go version
+  - [x] `.direnv/` is in `.gitignore`
+- **Commit**: `1bf51e9` feat(direnv): add .envrc for automatic flake activation
+- **Review**: No findings — changes are correct and complete.
 
 ### U3. Update README with Nix setup instructions
-- **Status**: pending
+- **Status**: in_progress
 - **Goal**: Document the Nix path and reconcile existing manual prerequisites with actual Go version.
 - **Requirements**: R4
 - **Dependencies**: U2
@@ -46,6 +49,7 @@
 
 ## Completed
 - U1 completed 2026-05-14
+- U2 completed 2026-05-14
 
 ## Notes
 - No progress.md existed previously; this file was created to track the Nix flake implementation.
