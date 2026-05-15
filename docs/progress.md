@@ -1,6 +1,30 @@
 # airgapctl Implementation Progress
 
 ## Active Plan
+[docs/plans/2026-05-14-004-feat-vhs-gif-demo-plan.md](docs/plans/2026-05-14-004-feat-vhs-gif-demo-plan.md)
+
+## Implementation Units (VHS GIF Demo)
+
+- [x] **U1. Install VHS tooling and scaffold demo directory**
+- [ ] **U2. Create demo fixtures (mock bundle and Helm chart)**
+- [ ] **U3. Verify TTL.sh push compatibility**
+- [ ] **U4. Write VHS tape script**
+- [ ] **U5. Generate GIF, add Makefile target, and update README**
+
+### U1 — Install VHS tooling and scaffold demo directory (2026-05-14)
+
+**Files created/modified:**
+- `demo/fixtures/.gitkeep` — ensures fixtures directory is tracked even when empty
+- `Makefile` — added `demo-deps` target (checks for `vhs`/`ttyd`, prints `brew install` instructions when missing) and `demo-clean` target (removes `demo/*.gif`, `demo/fixtures/*.airgap`, temp binaries)
+- `.gitignore` — added ignores for demo generated artifacts (`demo/*.gif`, `demo/fixtures/*.airgap`, `demo/airgapctl`, `demo/generate-bundle`)
+
+**Verification:** `make demo-deps` prints actionable install guidance when tools are missing; `make demo-clean` completes without error.
+
+**Review fix:** `.gitkeep` accidentally contained `.gitignore`-style patterns — corrected to empty file (commit `74d3693`).
+
+**Commits:** `4e50e99`, `74d3693`
+
+## Previous Plan (Completed)
 [docs/plans/2026-05-14-003-feat-e2e-test-suite-real-fixtures-plan.md](docs/plans/2026-05-14-003-feat-e2e-test-suite-real-fixtures-plan.md)
 
 ## Implementation Units (E2E Test Suite)
