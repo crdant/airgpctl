@@ -80,6 +80,11 @@ demo-deps:
 		echo "  ✗ ttyd is missing. Install with: brew install ttyd"; \
 	fi
 
+# Generate demo fixtures (mock bundle and Helm chart)
+demo-fixtures:
+	@echo "Generating demo fixtures..."
+	$(GO) run demo/generate-bundle.go
+
 # Clean generated demo artifacts
 demo-clean:
 	@echo "Cleaning demo artifacts..."

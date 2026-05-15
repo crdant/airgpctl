@@ -1,0 +1,8 @@
+image:
+  repository: nginx
+  tag: latest
+
+redis:
+  image:
+    repository: redis
+    tag: "7"
