@@ -26,7 +26,7 @@ Enter
 Sleep 1s
 
 # Push images to ttl.sh
-Type "./bin/airgapctl push --bundle demo/fixtures/bundle.airgap --registry ttl.sh --namespace airgapctl-demo --username unused --password unused"
+Type "./bin/airgapctl push --bundle demo/fixtures/bundle.airgap --registry ttl.sh --namespace airgapctl-demo --username unused --password unused --tls-skip-verify"
 Enter
 Sleep 22s
 

@@ -35,13 +35,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating bundle file: %w", err)
 	}
-	defer f.Close()
 
 	gw := gzip.NewWriter(f)
-	defer gw.Close()
-
 	w := tar.NewWriter(gw)
-	defer w.Close()
 
 	// 1. airgap.yaml
 	yamlContent := `spec:
@@ -51,6 +47,9 @@ func run() error {
   - "postgres:15"
 `
 	if err := writeTarFile(w, "airgap.yaml", []byte(yamlContent)); err != nil {
+		_ = w.Close()
+		_ = gw.Close()
+		_ = f.Close()
 		return err
 	}
 
@@ -71,10 +70,22 @@ func run() error {
 	layerDigest := sha256String(layerBlob)
 
 	// 2. Build manifest payloads
-	amd64JSON := makeSingleArchManifest(amd64ConfigDigest, len(amd64ConfigBlob), layerDigest, len(layerBlob))
-	arm64JSON := makeSingleArchManifest(arm64ConfigDigest, len(arm64ConfigBlob), layerDigest, len(layerBlob))
-	redisJSON := makeSingleArchManifest(redisConfigDigest, len(redisConfigBlob), layerDigest, len(layerBlob))
-	postgresJSON := makeSingleArchManifest(postgresConfigDigest, len(postgresConfigBlob), layerDigest, len(layerBlob))
+	amd64JSON, err := makeSingleArchManifest(amd64ConfigDigest, len(amd64ConfigBlob), layerDigest, len(layerBlob))
+	if err != nil {
+		return err
+	}
+	arm64JSON, err := makeSingleArchManifest(arm64ConfigDigest, len(arm64ConfigBlob), layerDigest, len(layerBlob))
+	if err != nil {
+		return err
+	}
+	redisJSON, err := makeSingleArchManifest(redisConfigDigest, len(redisConfigBlob), layerDigest, len(layerBlob))
+	if err != nil {
+		return err
+	}
+	postgresJSON, err := makeSingleArchManifest(postgresConfigDigest, len(postgresConfigBlob), layerDigest, len(layerBlob))
+	if err != nil {
+		return err
+	}
 
 	// Compute manifest digests
 	amd64Digest := sha256String(amd64JSON)
@@ -155,9 +166,24 @@ func run() error {
 
 	// 7. Write the shared layer blob
 	if err := writeBlob(w, layerDigest, layerBlob); err != nil {
+		_ = w.Close()
+		_ = gw.Close()
+		_ = f.Close()
 		return err
 	}
 
+	if err := w.Close(); err != nil {
+		_ = gw.Close()
+		_ = f.Close()
+		return fmt.Errorf("closing tar writer: %w", err)
+	}
+	if err := gw.Close(); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("closing gzip writer: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing bundle file: %w", err)
+	}
 	return nil
 }
 
@@ -214,7 +240,7 @@ func writeBlob(w *tar.Writer, digest string, data []byte) error {
 	return writeTarFile(w, blobPath, data)
 }
 
-func makeSingleArchManifest(configDigest string, configSize int, layerDigest string, layerSize int) []byte {
+func makeSingleArchManifest(configDigest string, configSize int, layerDigest string, layerSize int) ([]byte, error) {
 	m := map[string]interface{}{
 		"schemaVersion": 2,
 		"mediaType":     "application/vnd.docker.distribution.manifest.v2+json",
@@ -233,7 +259,7 @@ func makeSingleArchManifest(configDigest string, configSize int, layerDigest str
 	}
 	data, err := json.Marshal(m)
 	if err != nil {
-		panic(fmt.Sprintf("marshaling manifest: %v", err))
+		return nil, fmt.Errorf("marshaling manifest: %w", err)
 	}
-	return data
+	return data, nil
 }

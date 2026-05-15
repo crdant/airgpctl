@@ -6,12 +6,6 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${PROJECT_ROOT}"
 
-echo "=== Building airgapctl ==="
-make build
-
-echo "=== Generating demo fixtures ==="
-go run demo/generate-bundle.go
-
 echo "=== Recording VHS demo ==="
 vhs demo/airgapctl-demo.tape
 
