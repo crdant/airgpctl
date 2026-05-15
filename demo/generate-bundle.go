@@ -9,14 +9,13 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 )
-
-// The shared config/layer digest used by all single-arch manifests.
-const sharedBlobDigest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 func main() {
 	if err := run(); err != nil {
@@ -51,13 +50,37 @@ func run() error {
   - "redis:7"
   - "postgres:15"
 `
-	writeTarFile(w, "airgap.yaml", []byte(yamlContent))
+	if err := writeTarFile(w, "airgap.yaml", []byte(yamlContent)); err != nil {
+		return err
+	}
+
+	// Create unique blobs for each image so digests differ
+	amd64ConfigBlob := []byte(`{"architecture":"amd64","os":"linux"}`)
+	arm64ConfigBlob := []byte(`{"architecture":"arm64","os":"linux"}`)
+	redisConfigBlob := []byte(`{"architecture":"amd64","os":"linux","labels":{"app":"redis"}}`)
+	postgresConfigBlob := []byte(`{"architecture":"amd64","os":"linux","labels":{"app":"postgres"}}`)
+
+	// Create a shared layer blob with actual data
+	layerBlob := []byte("dummy layer data for all images")
+
+	// Compute digests for all blobs
+	amd64ConfigDigest := sha256String(amd64ConfigBlob)
+	arm64ConfigDigest := sha256String(arm64ConfigBlob)
+	redisConfigDigest := sha256String(redisConfigBlob)
+	postgresConfigDigest := sha256String(postgresConfigBlob)
+	layerDigest := sha256String(layerBlob)
 
 	// 2. Build manifest payloads
-	amd64JSON := makeSingleArchManifest()
-	arm64JSON := makeSingleArchManifest()
-	redisJSON := makeSingleArchManifest()
-	postgresJSON := makeSingleArchManifest()
+	amd64JSON := makeSingleArchManifest(amd64ConfigDigest, len(amd64ConfigBlob), layerDigest, len(layerBlob))
+	arm64JSON := makeSingleArchManifest(arm64ConfigDigest, len(arm64ConfigBlob), layerDigest, len(layerBlob))
+	redisJSON := makeSingleArchManifest(redisConfigDigest, len(redisConfigBlob), layerDigest, len(layerBlob))
+	postgresJSON := makeSingleArchManifest(postgresConfigDigest, len(postgresConfigBlob), layerDigest, len(layerBlob))
+
+	// Compute manifest digests
+	amd64Digest := sha256String(amd64JSON)
+	arm64Digest := sha256String(arm64JSON)
+	redisDigest := sha256String(redisJSON)
+	postgresDigest := sha256String(postgresJSON)
 
 	listJSON, err := json.Marshal(map[string]interface{}{
 		"schemaVersion": 2,
@@ -66,7 +89,7 @@ func run() error {
 			map[string]interface{}{
 				"mediaType": "application/vnd.docker.distribution.manifest.v2+json",
 				"size":      len(amd64JSON),
-				"digest":    "sha256:amd64digest",
+				"digest":    "sha256:" + amd64Digest,
 				"platform": map[string]string{
 					"architecture": "amd64",
 					"os":           "linux",
@@ -75,7 +98,7 @@ func run() error {
 			map[string]interface{}{
 				"mediaType": "application/vnd.docker.distribution.manifest.v2+json",
 				"size":      len(arm64JSON),
-				"digest":    "sha256:arm64digest",
+				"digest":    "sha256:" + arm64Digest,
 				"platform": map[string]string{
 					"architecture": "arm64",
 					"os":           "linux",
@@ -86,73 +109,125 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("marshaling manifest list: %w", err)
 	}
+	listDigest := sha256String(listJSON)
 
 	// 3. Write distribution layout for each image
-	writeImageLayout(w, "library/nginx", "latest", "listdigest", listJSON)
-	writeImageLayout(w, "library/redis", "7", "redis7digest", redisJSON)
-	writeImageLayout(w, "library/postgres", "15", "postgres15digest", postgresJSON)
+	if err := writeImageLayout(w, "library/nginx", "latest", listDigest, listJSON); err != nil {
+		return err
+	}
+	if err := writeImageLayout(w, "library/redis", "7", redisDigest, redisJSON); err != nil {
+		return err
+	}
+	if err := writeImageLayout(w, "library/postgres", "15", postgresDigest, postgresJSON); err != nil {
+		return err
+	}
 
-	// 4. Write child manifest blobs for the multi-arch image so pushMultiArch
+	// 4. Write child manifest revision links for the multi-arch image so pushMultiArch
 	// can read them via walker.ReadBlob(pm.Digest).
-	writeBlob(w, "amd64digest", amd64JSON)
-	writeBlob(w, "arm64digest", arm64JSON)
+	if err := writeManifestRevisionLink(w, "library/nginx", amd64Digest); err != nil {
+		return err
+	}
+	if err := writeManifestRevisionLink(w, "library/nginx", arm64Digest); err != nil {
+		return err
+	}
 
-	// 5. Write the shared config/layer blob referenced by all single-arch manifests
-	writeBlob(w, sharedBlobDigest, []byte("dummy blob data"))
+	// 5. Write child manifest blobs for the multi-arch image
+	if err := writeBlob(w, amd64Digest, amd64JSON); err != nil {
+		return err
+	}
+	if err := writeBlob(w, arm64Digest, arm64JSON); err != nil {
+		return err
+	}
+
+	// 6. Write config blobs
+	if err := writeBlob(w, amd64ConfigDigest, amd64ConfigBlob); err != nil {
+		return err
+	}
+	if err := writeBlob(w, arm64ConfigDigest, arm64ConfigBlob); err != nil {
+		return err
+	}
+	if err := writeBlob(w, redisConfigDigest, redisConfigBlob); err != nil {
+		return err
+	}
+	if err := writeBlob(w, postgresConfigDigest, postgresConfigBlob); err != nil {
+		return err
+	}
+
+	// 7. Write the shared layer blob
+	if err := writeBlob(w, layerDigest, layerBlob); err != nil {
+		return err
+	}
 
 	return nil
 }
 
-func writeTarFile(w *tar.Writer, name string, data []byte) {
+func sha256String(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
+}
+
+func writeTarFile(w *tar.Writer, name string, data []byte) error {
 	header := &tar.Header{
 		Name: name,
 		Size: int64(len(data)),
 		Mode: 0644,
 	}
 	if err := w.WriteHeader(header); err != nil {
-		panic(fmt.Sprintf("writing tar header for %s: %v", name, err))
+		return fmt.Errorf("writing tar header for %s: %w", name, err)
 	}
 	if _, err := w.Write(data); err != nil {
-		panic(fmt.Sprintf("writing tar content for %s: %v", name, err))
+		return fmt.Errorf("writing tar content for %s: %w", name, err)
 	}
+	return nil
 }
 
-func writeImageLayout(w *tar.Writer, repo, tag, manifestDigest string, manifestJSON []byte) {
+func writeImageLayout(w *tar.Writer, repo, tag, manifestDigest string, manifestJSON []byte) error {
 	// Manifest revision link
-	revPath := fmt.Sprintf("images/docker/registry/v2/repositories/%s/_manifests/revisions/sha256/%s/link", repo, manifestDigest)
-	writeTarFile(w, revPath, []byte("sha256:"+manifestDigest))
+	if err := writeManifestRevisionLink(w, repo, manifestDigest); err != nil {
+		return err
+	}
 
 	// Tag current link
 	tagPath := fmt.Sprintf("images/docker/registry/v2/repositories/%s/_manifests/tags/%s/current/link", repo, tag)
-	writeTarFile(w, tagPath, []byte("sha256:"+manifestDigest))
+	if err := writeTarFile(w, tagPath, []byte("sha256:"+manifestDigest)); err != nil {
+		return err
+	}
 
 	// Blob data with two-char prefix
-	writeBlob(w, manifestDigest, manifestJSON)
+	if err := writeBlob(w, manifestDigest, manifestJSON); err != nil {
+		return err
+	}
+	return nil
 }
 
-func writeBlob(w *tar.Writer, digest string, data []byte) {
+func writeManifestRevisionLink(w *tar.Writer, repo, manifestDigest string) error {
+	revPath := fmt.Sprintf("images/docker/registry/v2/repositories/%s/_manifests/revisions/sha256/%s/link", repo, manifestDigest)
+	return writeTarFile(w, revPath, []byte("sha256:"+manifestDigest))
+}
+
+func writeBlob(w *tar.Writer, digest string, data []byte) error {
 	prefix := ""
 	if len(digest) >= 2 {
 		prefix = digest[:2]
 	}
 	blobPath := fmt.Sprintf("images/docker/registry/v2/blobs/sha256/%s/%s/data", prefix, digest)
-	writeTarFile(w, blobPath, data)
+	return writeTarFile(w, blobPath, data)
 }
 
-func makeSingleArchManifest() []byte {
+func makeSingleArchManifest(configDigest string, configSize int, layerDigest string, layerSize int) []byte {
 	m := map[string]interface{}{
 		"schemaVersion": 2,
 		"mediaType":     "application/vnd.docker.distribution.manifest.v2+json",
 		"config": map[string]interface{}{
 			"mediaType": "application/vnd.docker.container.image.v1+json",
-			"size":      7023,
-			"digest":    "sha256:" + sharedBlobDigest,
+			"size":      configSize,
+			"digest":    "sha256:" + configDigest,
 		},
 		"layers": []interface{}{
 			map[string]interface{}{
 				"mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
-				"size":      32654,
-				"digest":    "sha256:" + sharedBlobDigest,
+				"size":      layerSize,
+				"digest":    "sha256:" + layerDigest,
 			},
 		},
 	}
