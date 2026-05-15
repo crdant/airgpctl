@@ -42,6 +42,7 @@ tests/e2e/airgapctl
 
 # Demo generated artifacts
 demo/*.gif
+!demo/airgapctl-demo.gif
 demo/fixtures/*.airgap
 
 # Demo temp binaries
